@@ -91,7 +91,7 @@ AI-Document-Intelligence/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/AI-Document-Intelligence.git
+git clone https://github.com/mdsakibhasan-cs/AI-Document-Intelligence.git
 cd AI-Document-Intelligence
 
 ### 2. Create a virtual environment
@@ -269,8 +269,13 @@ Nantong University, China
 
 Interested in:
 - Artificial Intelligence
+- Data Science
+- Machine Learning
+- Natural Language Processing
 - Software Engineering
 - Cyber Security
+- Networking
+- Embedded Systems
 - Intelligent Systems
 
 ---
