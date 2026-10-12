@@ -41,6 +41,8 @@ Semantic Search
 Question Answering
       ↓
 Document Summary
+```
+
 ---
 
 ## 🛠️ Technologies Used
@@ -78,11 +80,14 @@ AI-Document-Intelligence/
 ├── tests/
 │
 ├── screenshots/
+│   ├── app-overview.png
+│   └── question-answering.png
 │
 ├── .gitignore
 ├── requirements.txt
 ├── README.md
 └── LICENSE
+```
 
 ---
 
@@ -93,11 +98,13 @@ AI-Document-Intelligence/
 ```bash
 git clone https://github.com/mdsakibhasan-cs/AI-Document-Intelligence.git
 cd AI-Document-Intelligence
+```
 
 ### 2. Create a virtual environment
 
 ```bash
 python -m venv .venv
+```
 
 ### 3. Activate the virtual environment
 
@@ -105,11 +112,13 @@ python -m venv .venv
 
 ```bash
 .venv\Scripts\activate
+```
 
 ### 4. Install dependencies
 
 ```bash
 pip install -r requirements.txt
+```
 
 ---
 
@@ -119,6 +128,7 @@ Start the Streamlit application with:
 
 ```bash
 streamlit run app/app.py --server.fileWatcherType none
+```
 
 The application will open in your browser.
 
@@ -126,12 +136,13 @@ You can also access it at:
 
 ```text
 http://localhost:8501
+```
 
 ---
 
 ## 📖 How It Works
 
-The system processes uploaded documents through the following pipeline:
+The system processes uploaded documents through the following pipeline.
 
 ### 1. Document Upload
 
@@ -139,7 +150,7 @@ Users can upload PDF or DOCX documents through the Streamlit web interface.
 
 ### 2. Text Extraction
 
-The system extracts readable text from the uploaded document using PyPDF for PDF files and python-docx for DOCX files.
+The system extracts readable text from uploaded PDF files using PyPDF and from DOCX files using python-docx.
 
 ### 3. Text Cleaning
 
@@ -185,7 +196,6 @@ Users can:
 - 📚 View relevant document sources
 - 📈 Inspect similarity scores for retrieved content
 
----
 ### 📊 Document Overview
 
 The application provides a clean interface for uploading and analyzing PDF and DOCX documents. It displays document statistics, processing status, and an automatically generated summary.
@@ -198,13 +208,13 @@ Users can ask natural-language questions about the uploaded document. The system
 
 ![Question Answering](screenshots/question-answering.png)
 
+---
+
 ## 🔬 Example Query
 
 After uploading a document, users can ask questions related to its content.
 
-Example:
-
-**Question:**
+**Example question:**
 
 > How does AIM handle interrupts?
 
@@ -262,12 +272,13 @@ The current version of the system has the following limitations:
 
 ## 👨‍💻 Author
 
-**Hasan Md Sakib**
+**Md Sakib Hasan**
 
 Computer Science and Technology  
 Nantong University, China
 
 Interested in:
+
 - Artificial Intelligence
 - Data Science
 - Machine Learning
