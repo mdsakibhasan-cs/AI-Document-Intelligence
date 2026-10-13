@@ -1,110 +1,111 @@
 import re
 
+from src.logger import get_logger
+
+
+logger = get_logger(__name__)
+
 
 def clean_text(text):
     """Clean extracted PDF/DOCX text for search and summarization."""
 
-    text = text.replace("\r", "\n")
+    logger.info("Starting text cleaning")
 
-    # Remove common figure/table captions
-    text = re.sub(
-        r"(?im)^\s*(fig\.?|figure|table)\s*\d+[A-Za-z0-9\.\-]*.*$",
-        "",
-        text
-    )
+    try:
+        text = text.replace("\r", "\n")
 
-    # Remove journal/header/footer noise
-    text = re.sub(
-        r"(?im)^\s*(journal of latex class files|copyright|arxiv).*?$",
-        "",
-        text
-    )
-
-    # Remove page-number-only lines
-    text = re.sub(
-        r"(?m)^\s*\d+\s*$",
-        "",
-        text
-    )
-
-    # Remove common standalone section numbering
-    text = re.sub(
-        r"(?m)^\s*\d+(?:\.\d+)*\s*$",
-        "",
-        text
-    )
-
-    # Fix words broken across lines
-    text = re.sub(
-        r"(\w)-\s*\n\s*(\w)",
-        r"\1\2",
-        text
-    )
-
-    # Replace line breaks with spaces
-    text = re.sub(
-        r"\s*\n\s*",
-        " ",
-        text
-    )
-
-    # Remove excessive spaces
-    text = re.sub(
-        r"[ \t]+",
-        " ",
-        text
-    )
-
-    # Remove obvious diagram fragments
-    diagram_patterns = [
-        r"\bPath\s+\d+\b",
-        r"\bInt\.\b",
-        r"\bInterrupt\s+lines?\b",
-        r"\bFirmware\s+Binary\b",
-        r"\bProcessor\s+Emulator\b",
-        r"\bSecurity\s+Bugs\b",
-        r"\bInterrupt\s+Modeling\b",
-        r"\bDynamic\s+Symbolic\s+Execution\b",
-    ]
-
-    for pattern in diagram_patterns:
         text = re.sub(
-            pattern,
+            r"(?im)^\s*(fig\.?|figure|table)\s*\d+[A-Za-z0-9\.\-]*.*$",
             "",
-            text,
-            flags=re.IGNORECASE
+            text
         )
 
-    # Remove repeated spaces again
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
+        text = re.sub(
+            r"(?im)^\s*(journal of latex class files|copyright|arxiv).*?$",
+            "",
+            text
+        )
 
-    return text.strip()
+        # Remove standalone page numbers
+        text = re.sub(r"(?m)^\s*\d+\s*$", "", text)
+        text = re.sub(r"(?m)^\s*\d+(?:\.\d+)*\s*$", "", text)
+
+        # Fix broken words from PDF extraction
+        text = re.sub(
+            r"(\w)-\s*\n\s*(\w)",
+            r"\1\2",
+            text
+        )
+
+        text = re.sub(r"\s*\n\s*", " ", text)
+        text = re.sub(r"[ \t]+", " ", text)
+
+        diagram_patterns = [
+            r"\bPath\s+\d+\b",
+            r"\bInt\.\b",
+            r"\bInterrupt\s+lines?\b",
+            r"\bFirmware\s+Binary\b",
+            r"\bProcessor\s+Emulator\b",
+            r"\bSecurity\s+Bugs\b",
+            r"\bInterrupt\s+Modeling\b",
+            r"\bDynamic\s+Symbolic\s+Execution\b",
+        ]
+
+        for pattern in diagram_patterns:
+            text = re.sub(
+                pattern,
+                "",
+                text,
+                flags=re.IGNORECASE
+            )
+
+        text = re.sub(r"\s+", " ", text)
+
+        result = text.strip()
+
+        logger.info(
+            "Text cleaning completed | characters=%d",
+            len(result)
+        )
+
+        return result
+
+    except Exception:
+        logger.exception("Text cleaning failed")
+        raise
 
 
 def chunk_text(text, chunk_size=1000, overlap=200):
     """Split text into overlapping chunks."""
 
-    words = text.split()
+    logger.info(
+        "Starting text chunking | chunk_size=%d | overlap=%d",
+        chunk_size,
+        overlap
+    )
 
-    chunks = []
+    try:
+        words = text.split()
+        chunks = []
 
-    start = 0
+        start = 0
 
-    while start < len(words):
+        while start < len(words):
+            end = start + chunk_size
+            chunk = " ".join(words[start:end])
 
-        end = start + chunk_size
+            if chunk.strip():
+                chunks.append(chunk)
 
-        chunk = " ".join(
-            words[start:end]
+            start += chunk_size - overlap
+
+        logger.info(
+            "Text chunking completed | chunks=%d",
+            len(chunks)
         )
 
-        if chunk.strip():
-            chunks.append(chunk)
+        return chunks
 
-        start += chunk_size - overlap
-
-    return chunks
+    except Exception:
+        logger.exception("Text chunking failed")
+        raise

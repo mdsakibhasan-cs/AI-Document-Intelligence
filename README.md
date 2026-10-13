@@ -1,6 +1,6 @@
 # 📄 AI-Powered Document Intelligence
 
-An AI-powered document analysis system that allows users to upload PDF or DOCX documents, search their content semantically, ask questions, and generate concise document summaries.
+An AI-powered document analysis system that allows users to upload PDF or DOCX documents, extract and process their content, perform semantic search, ask questions, and generate concise document summaries.
 
 ---
 
@@ -8,6 +8,7 @@ An AI-powered document analysis system that allows users to upload PDF or DOCX d
 
 - 📕 PDF document support
 - 📘 DOCX document support
+- 🔍 OCR support for scanned PDF documents
 - 🧹 Automated text cleaning
 - ✂️ Intelligent text chunking
 - 🧠 Sentence-transformer embeddings
@@ -18,6 +19,8 @@ An AI-powered document analysis system that allows users to upload PDF or DOCX d
 - 🌐 Interactive Streamlit web interface
 - 📊 Document processing statistics
 - 📚 Relevant source retrieval with similarity scores
+- 📝 Application logging and error handling
+- 🧪 Automated test suite
 
 ---
 
@@ -27,6 +30,8 @@ An AI-powered document analysis system that allows users to upload PDF or DOCX d
 Document Upload
       ↓
 Text Extraction
+      ↓
+OCR for Scanned PDFs
       ↓
 Text Cleaning
       ↓
@@ -53,9 +58,14 @@ Document Summary
 | Streamlit | Web application interface |
 | PyPDF | PDF text extraction |
 | python-docx | DOCX text extraction |
+| Tesseract OCR | OCR for scanned PDF pages |
+| pytesseract | Python interface for Tesseract OCR |
+| pdf2image | Convert PDF pages into images for OCR |
+| Pillow | Image processing |
 | Sentence Transformers | Text embeddings |
 | FAISS | Vector similarity search |
 | NumPy | Numerical processing |
+| pytest | Automated testing |
 
 ---
 
@@ -72,7 +82,8 @@ AI-Document-Intelligence/
 │   ├── text_processor.py
 │   ├── vector_search.py
 │   ├── qa_engine.py
-│   └── summary_engine.py
+│   ├── summary_engine.py
+│   └── logger.py
 │
 ├── data/
 │   └── uploads/
@@ -114,11 +125,22 @@ python -m venv .venv
 .venv\Scripts\activate
 ```
 
-### 4. Install dependencies
+### 4. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
+
+### 5. OCR Requirements
+
+Scanned PDF OCR requires:
+
+- **Tesseract OCR**
+- **Poppler**
+
+On Windows, the application currently uses locally installed Tesseract and Poppler binaries.
+
+> **Note:** The configured Windows paths are environment-specific. For deployment on another computer, Tesseract and Poppler paths may need to be configured for that environment.
 
 ---
 
@@ -150,35 +172,43 @@ Users can upload PDF or DOCX documents through the Streamlit web interface.
 
 ### 2. Text Extraction
 
-The system extracts readable text from uploaded PDF files using PyPDF and from DOCX files using python-docx.
+For regular PDF documents, the system extracts embedded text using PyPDF. DOCX documents are processed using python-docx.
 
-### 3. Text Cleaning
+### 3. OCR for Scanned PDFs
+
+If a PDF page does not contain extractable text, the system automatically attempts OCR.
+
+The PDF page is converted into an image using `pdf2image` and Poppler, and Tesseract OCR is used to extract the text from the image.
+
+This allows the system to process scanned or image-based PDF pages.
+
+### 4. Text Cleaning
 
 Extracted text is cleaned by removing unnecessary formatting, page artifacts, broken lines, and other unwanted text fragments.
 
-### 4. Text Chunking
+### 5. Text Chunking
 
 The cleaned document is divided into smaller overlapping text chunks to make semantic search more effective.
 
-### 5. Sentence Embeddings
+### 6. Sentence Embeddings
 
 Each text chunk is converted into a numerical vector representation using Sentence Transformers.
 
-### 6. Vector Indexing
+### 7. Vector Indexing
 
 The generated embeddings are stored in a FAISS vector index for efficient similarity-based retrieval.
 
-### 7. Semantic Search
+### 8. Semantic Search
 
 When a user asks a question, the system converts the question into an embedding and retrieves the most semantically relevant document chunks.
 
-### 8. Question Answering
+### 9. Question Answering
 
 The retrieved document content is analyzed to generate a context-based answer to the user's question.
 
-### 9. Document Summarization
+### 10. Document Summarization
 
-The system analyzes the document content and selects important sentences to generate a concise summary.
+The system analyzes the processed document content and selects important sentences to generate a concise summary.
 
 ---
 
@@ -229,6 +259,7 @@ The interface also displays the retrieved source sections along with their simil
 The main goals of this project are to:
 
 - Build a practical document intelligence system for PDF and DOCX files
+- Support both text-based and scanned PDF documents
 - Enable semantic search over unstructured document content
 - Retrieve relevant information based on the meaning of user queries
 - Provide context-based question answering
@@ -243,7 +274,6 @@ The main goals of this project are to:
 
 The system can be further improved by adding:
 
-- 🔍 OCR support for scanned PDF documents
 - 🗂️ Automatic document classification
 - 🤖 Advanced LLM-based question answering
 - 💬 Conversational multi-turn document chat
@@ -253,6 +283,7 @@ The system can be further improved by adding:
 - 🔐 User authentication and document access control
 - ☁️ Cloud-based document storage and deployment
 - 📊 Advanced document analytics and visualization
+- 🌍 Improved OCR configuration and multilingual OCR support
 
 ---
 
@@ -260,7 +291,8 @@ The system can be further improved by adding:
 
 The current version of the system has the following limitations:
 
-- Scanned PDFs without an embedded text layer are not yet supported through OCR.
+- OCR currently depends on locally installed Tesseract OCR and Poppler binaries.
+- OCR accuracy depends on the quality, resolution, and layout of scanned documents.
 - The current question-answering module uses retrieved document content rather than a large language model.
 - Answer quality depends on the quality and relevance of the retrieved text chunks.
 - The system currently processes one uploaded document at a time.
