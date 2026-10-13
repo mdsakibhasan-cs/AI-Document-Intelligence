@@ -11,7 +11,8 @@ import streamlit as st
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT_DIR / "src"
 
-sys.path.append(str(SRC_DIR))
+sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(SRC_DIR))
 
 
 from document_processor import extract_text
@@ -19,6 +20,7 @@ from text_processor import clean_text, chunk_text
 from vector_search import VectorSearch
 from qa_engine import QAEngine
 from summary_engine import SummaryEngine
+from document_classifier import DocumentClassifier
 
 
 # =========================================================
@@ -53,19 +55,18 @@ st.markdown(
     }
 
     .answer-box {
-    padding: 1.2rem !important;
-    border-radius: 12px !important;
-    border: 1px solid #cccccc !important;
-    background-color: #f8f9fa !important;
-    color: #222222 !important;
-    line-height: 1.7 !important;
-    font-size: 1.05rem !important;
-}
+        padding: 1.2rem !important;
+        border-radius: 12px !important;
+        border: 1px solid #cccccc !important;
+        background-color: #f8f9fa !important;
+        color: #222222 !important;
+        line-height: 1.7 !important;
+        font-size: 1.05rem !important;
+    }
 
-.answer-box * {
-    color: #222222 !important;
-}
-
+    .answer-box * {
+        color: #222222 !important;
+    }
 
     .section-title {
         font-size: 1.3rem;
@@ -90,7 +91,8 @@ st.markdown(
 
 st.markdown(
     '<div class="subtitle">'
-    'Upload documents, search their content semantically, and ask questions using AI-powered document analysis.'
+    'Upload documents, classify their type, search their content semantically, '
+    'and ask questions using AI-powered document analysis.'
     '</div>',
     unsafe_allow_html=True
 )
@@ -123,9 +125,11 @@ with st.sidebar:
         """
         **Document**
         ↓  
-        **Text Extraction**
+        **Text Extraction + OCR**
         ↓  
         **Text Cleaning**
+        ↓  
+        **AI Document Classification**
         ↓  
         **Chunking**
         ↓  
@@ -134,6 +138,8 @@ with st.sidebar:
         **FAISS Vector Search**
         ↓  
         **Question Answering**
+        ↓  
+        **Summarization**
         """
     )
 
@@ -150,70 +156,138 @@ with st.sidebar:
 
 st.subheader("📂 Upload Your Document")
 
-uploaded_file = st.file_uploader(
-    "Choose a PDF or DOCX file",
+uploaded_files = st.file_uploader(
+    "Choose PDF or DOCX files",
     type=["pdf", "docx"],
-    help="Upload a document to analyze its content."
+    accept_multiple_files=True,
+    help="Upload one or more documents to analyze."
 )
+
+
+# =========================================================
+# DOCUMENT CLASSIFIER
+# =========================================================
+
+@st.cache_resource
+def load_document_classifier():
+    """
+    Load and cache the document classification model.
+
+    Streamlit reruns the application frequently, so caching
+    prevents the transformer model from loading repeatedly.
+    """
+
+    return DocumentClassifier()
 
 
 # =========================================================
 # PROCESS DOCUMENT
 # =========================================================
 
-if uploaded_file is not None:
+if uploaded_files:
 
     upload_dir = ROOT_DIR / "data" / "uploads"
+
     upload_dir.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    file_path = upload_dir / uploaded_file.name
+    for uploaded_file in uploaded_files:
 
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+        file_path = upload_dir / uploaded_file.name
 
-    st.success(
-        f"✅ Uploaded successfully: {uploaded_file.name}"
-    )
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        st.success(
+            f"✅ Uploaded successfully: {uploaded_file.name}"
+        )
+
+
 
     # -----------------------------------------------------
     # PROCESSING
     # -----------------------------------------------------
 
     with st.spinner(
-        "🔄 Extracting and indexing document..."
+        "🔄 Extracting, classifying, and indexing documents..."
     ):
 
         try:
 
-            # Extract text
-            text = extract_text(file_path)
+            documents = []
+            all_chunks = []
+            all_sources = []
 
-            # Clean text
-            cleaned_text = clean_text(text)
+            classifier = load_document_classifier()
 
-            # Create chunks
-            chunks = chunk_text(cleaned_text)
+            # -------------------------------------------------
+            # PROCESS EACH DOCUMENT
+            # -------------------------------------------------
 
-            # Build vector search index
+            for uploaded_file in uploaded_files:
+
+                file_path = upload_dir / uploaded_file.name
+
+                # STEP 1 — TEXT EXTRACTION
+                text = extract_text(file_path)
+
+                # STEP 2 — TEXT CLEANING
+                cleaned_text = clean_text(text)
+
+                # STEP 3 — DOCUMENT CLASSIFICATION
+                classification_result = classifier.classify(
+                    cleaned_text
+                )
+
+                # STEP 4 — CREATE CHUNKS
+                chunks = chunk_text(cleaned_text)
+
+                # Store document information
+                documents.append({
+                    "name": uploaded_file.name,
+                    "file_path": file_path,
+                    "cleaned_text": cleaned_text,
+                    "chunks": chunks,
+                    "classification": classification_result
+                })
+
+                # Add chunks to global search collection
+                all_chunks.extend(chunks)
+
+                # Remember which document each chunk belongs to
+                all_sources.extend(
+                    [uploaded_file.name] * len(chunks)
+                )
+
+            # -------------------------------------------------
+            # BUILD VECTOR SEARCH INDEX
+            # -------------------------------------------------
+
             search_engine = VectorSearch()
-            search_engine.build_index(chunks)
+
+            search_engine.build_index(
+                all_chunks,
+                all_sources
+            )
+
+            # -------------------------------------------------
+            # INITIALIZE QA + SUMMARY
+            # -------------------------------------------------
 
             qa_engine = QAEngine()
+
             summary_engine = SummaryEngine()
 
             processing_success = True
-
-            
 
         except Exception as e:
 
             processing_success = False
 
             st.error(
-                f"❌ Error while processing document: {e}"
+                f"❌ Error while processing documents: {e}"
             )
 
 
@@ -224,58 +298,132 @@ if uploaded_file is not None:
     if processing_success:
 
         st.success(
-            "🎉 Document processed and indexed successfully!"
+            "🎉 All documents processed, classified, and indexed successfully!"
         )
 
+
+        # =================================================
+        # DOCUMENT CLASSIFICATION
+        # =================================================
+
+        st.subheader("🤖 AI Document Classification")
+
+        for document in documents:
+
+            classification = document["classification"]
+
+            st.markdown(
+                f"### 📄 {document['name']}"
+            )
+
+            class_col1, class_col2 = st.columns(2)
+
+            with class_col1:
+
+                st.metric(
+                    "Document Type",
+                    classification["category"]
+                )
+
+            with class_col2:
+
+                st.metric(
+                    "Classification Confidence",
+                    f"{classification['confidence'] * 100:.2f}%"
+                )
+
+            with st.expander(
+                "View all classification predictions"
+            ):
+
+                predictions = classification["all_predictions"]
+
+                for label, score in predictions.items():
+
+                    st.write(
+                        f"**{label}** — {score * 100:.2f}%"
+                    )
+
+            st.divider()
+
+
+        # =================================================
+        # DOCUMENT OVERVIEW
+        # =================================================
+
         st.subheader("📊 Document Overview")
+
+        total_characters = sum(
+            len(document["cleaned_text"])
+            for document in documents
+        )
+
+        total_chunks = len(all_chunks)
+
+        total_file_size = sum(
+            document["file_path"].stat().st_size
+            for document in documents
+        )
+
+        total_file_size_mb = total_file_size / (
+            1024 * 1024
+        )
 
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+
             st.metric(
-                "Characters",
-                f"{len(cleaned_text):,}"
+                "Documents",
+                len(documents)
             )
 
         with col2:
+
             st.metric(
-                "Chunks",
-                len(chunks)
+                "Characters",
+                f"{total_characters:,}"
             )
 
         with col3:
+
             st.metric(
-                "File Type",
-                file_path.suffix.upper()
+                "Total Chunks",
+                total_chunks
             )
 
         with col4:
-            file_size_mb = file_path.stat().st_size / (
-                1024 * 1024
-            )
 
             st.metric(
-                "File Size",
-                f"{file_size_mb:.2f} MB"
+                "Total Size",
+                f"{total_file_size_mb:.2f} MB"
             )
-
 
         st.divider()
-                # =================================================
-        # DOCUMENT SUMMARY
+
+
+        # =================================================
+        # DOCUMENT SUMMARIES
         # =================================================
 
-        st.subheader("📝 Document Summary")
+        st.subheader("📝 Document Summaries")
 
-        with st.spinner("📝 Generating document summary..."):
+        for document in documents:
 
-            summary = summary_engine.summarize(
-                cleaned_text,
-                max_sentences=4
-            )
-        st.write(summary)
-    
-        
+            with st.expander(
+                f"📄 Summary — {document['name']}"
+            ):
+
+                with st.spinner(
+                    f"📝 Generating summary for {document['name']}..."
+                ):
+
+                    summary = summary_engine.summarize(
+                        document["cleaned_text"],
+                        max_sentences=4
+                    )
+
+                st.write(summary)
 
         st.divider()
 
@@ -284,30 +432,29 @@ if uploaded_file is not None:
         # QUESTION ANSWERING
         # =================================================
 
-        st.subheader("🔎 Ask Questions About Your Document")
+        st.subheader(
+            "🔎 Ask Questions About Your Document"
+        )
 
         question = st.text_input(
             "Enter your question",
-            placeholder="Example: How does AIM handle interrupts?"
+            placeholder="Example: How does ADFEmu improve code coverage?"
         )
-
 
         if question.strip():
 
             with st.spinner(
                 "🤖 Searching the document..."
             ):
-
                 results = search_engine.search(
                     question,
-                    top_k=3
+                    top_k=12
                 )
 
                 answer = qa_engine.answer_question(
                     question,
                     results
                 )
-
 
             # =============================================
             # ANSWER
@@ -327,7 +474,6 @@ if uploaded_file is not None:
                 unsafe_allow_html=True
             )
 
-
             # =============================================
             # SOURCES
             # =============================================
@@ -343,15 +489,15 @@ if uploaded_file is not None:
             ):
 
                 score = result["score"]
+                source = result["source"]
 
                 with st.expander(
-                    f"Source {i}  •  Similarity Score: {score:.4f}"
+                    f"Source {i}  •  {source}  •  Similarity Score: {score:.4f}"
                 ):
 
                     st.write(
                         result["text"]
                     )
-
 
             # =============================================
             # SEARCH EXPLANATION
@@ -359,11 +505,11 @@ if uploaded_file is not None:
 
             st.info(
                 "💡 The answer is generated from the most "
-                "semantically relevant sections of your uploaded document."
+                "semantically relevant sections of your uploaded documents."
             )
 
-
         else:
+
             st.info(
-               "💡 Enter a question above to search and analyze your document."
+                "💡 Enter a question above to search and analyze your documents."
             )

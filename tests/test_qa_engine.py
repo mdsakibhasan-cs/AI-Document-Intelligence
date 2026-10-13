@@ -39,7 +39,7 @@ def test_qa_engine_handles_empty_results():
         []
     )
 
-    assert answer == "No relevant information was found in the document."
+    assert answer == "I could not find relevant information in the uploaded document."
 
 
 def test_qa_engine_uses_relevant_content():

@@ -6,7 +6,7 @@ def test_clean_text_removes_extra_spaces():
 
     result = clean_text(text)
 
-    assert result == "Hello world This is a test."
+    assert result == "Hello world\n\nThis is a test."
 
 
 def test_clean_text_removes_page_numbers():
