@@ -1,1199 +1,2150 @@
 import re
-
-from src.logger import get_logger
-
-
-logger = get_logger(__name__)
+from typing import Dict, List, Tuple
 
 
 class QAEngine:
     """
-    Source-grounded question answering engine.
+    Source-grounded extractive QA engine.
 
-    The engine selects and reformats evidence from retrieved
-    document chunks. It does not use an external LLM.
-
-    Supported question intents:
-        - objective
-        - definition
-        - mechanism
-        - result
-        - limitation / challenge / problem
-        - general
+    The engine selects answers from retrieved document text.
+    It does not invent unsupported facts.
     """
 
+    # =========================================================
+    # BASIC LANGUAGE CONFIGURATION
+    # =========================================================
+
+    STOPWORDS = {
+        "a", "an", "the",
+        "is", "are", "was", "were",
+        "be", "been", "being",
+
+        "do", "does", "did", "doing",
+
+        "how", "what", "why", "when",
+        "where", "which", "who",
+        "whom", "whose",
+
+        "can", "could", "would",
+        "should", "may", "might",
+        "will", "shall",
+
+        "of", "to", "for", "in",
+        "on", "at", "by", "with",
+        "from", "into", "through",
+
+        "and", "or", "but", "as",
+        "that", "this", "these",
+        "those",
+
+        "it", "its",
+        "they", "them", "their",
+        "he", "she",
+        "we", "our",
+        "you", "your",
+
+        "about", "than", "then",
+
+        "main", "major", "key",
+        "primary", "important",
+
+        "problem", "issue", "challenge",
+        "objective", "purpose", "goal",
+
+        "result", "results",
+        "finding", "findings",
+
+        "method", "system",
+        "approach", "paper",
+
+        "use", "uses", "used", "using",
+        "handle", "handles", "handled",
+    }
+
+    QUESTION_WORDS = {
+        "what", "how", "why", "when",
+        "where", "which", "who",
+        "whom", "whose",
+        "does", "do", "did",
+        "can", "could", "would",
+        "should", "may", "might",
+        "will", "is", "are",
+        "was", "were",
+    }
+
+    GENERIC_TERMS = {
+        "address",
+        "addresses",
+        "addressed",
+
+        "problem",
+        "issue",
+        "challenge",
+
+        "work",
+        "works",
+        "working",
+
+        "handle",
+        "handles",
+        "handled",
+
+        "use",
+        "uses",
+        "used",
+        "using",
+
+        "method",
+        "approach",
+        "system",
+        "paper",
+
+        "main",
+        "major",
+        "key",
+        "primary",
+
+        "objective",
+        "purpose",
+        "goal",
+
+        "result",
+        "results",
+        "finding",
+        "findings",
+    }
+
+    # =========================================================
+    # COMPARISON / NEGATIVE LANGUAGE
+    # =========================================================
+
+    COMPARISON_PHRASES = (
+        "compared to",
+        "compared with",
+        "in comparison",
+        "in contrast",
+        "unlike",
+        "whereas",
+
+        "other samples",
+        "other approaches",
+        "other methods",
+        "other systems",
+        "other techniques",
+        "other tools",
+
+        "orthogonal challenge",
+
+        "not addressed by",
+        "not supported by",
+        "not handled by",
+        "not covered by",
+
+        "does not address",
+        "does not support",
+        "does not handle",
+
+        "cannot address",
+        "cannot support",
+        "cannot handle",
+    )
+
+    # =========================================================
+    # PROBLEM CUES
+    # =========================================================
+
+    PROBLEM_CUES = (
+        "major issue",
+        "major problem",
+        "key problem",
+        "main problem",
+
+        "critical issue",
+        "critical problem",
+
+        "challenge",
+        "problem of",
+        "problem with",
+
+        "difficulty",
+        "difficult",
+
+        "remains unresolved",
+        "unresolved",
+        "remains a challenge",
+
+        "incorrectly",
+        "incorrect",
+        "wrong",
+
+        "imprecise",
+        "inaccurate",
+
+        "crash",
+        "crashes",
+
+        "get stuck",
+        "stuck",
+
+        "hang",
+        "hangs",
+
+        "halt",
+        "halts",
+
+        "reset",
+        "resets",
+
+        "infinite loop",
+
+        "cannot determine",
+        "unable to determine",
+
+        "randomly triggered",
+        "wrong interrupts",
+    )
+
+    STRONG_PROBLEM_PATTERNS = (
+        "major issue",
+        "major problem",
+        "key problem",
+        "critical issue",
+        "critical problem",
+
+        "remains unresolved",
+        "challenge remains",
+
+        "challenge of accurately",
+        "problem of accurately",
+
+        "proper mechanism",
+    )
+
+    # =========================================================
+    # MECHANISM CUES
+    # =========================================================
+
+    MECHANISM_CUES = (
+        "uses",
+        "using",
+
+        "utilizes",
+        "utilises",
+
+        "via",
+        "through",
+        "based on",
+
+        "handles",
+        "handle",
+
+        "triggers",
+        "trigger",
+        "firing",
+
+        "mechanism",
+        "algorithm",
+        "architecture",
+        "framework",
+
+        "monitors",
+        "monitor",
+
+        "detects",
+        "detect",
+
+        "identifies",
+        "identify",
+
+        "models",
+        "model",
+
+        "analyzes",
+        "analyze",
+
+        "selects",
+        "select",
+
+        "adapts",
+        "adaptive",
+
+        "automatically",
+
+        "determines",
+        "determine",
+
+        "tracks",
+        "track",
+
+        "checks",
+        "check",
+    )
+
+    # =========================================================
+    # OBJECTIVE CUES
+    # =========================================================
+
+    OBJECTIVE_CUES = (
+        "aims to",
+        "aim to",
+        "aimed to",
+
+        "our goal",
+        "goal is",
+
+        "purpose is",
+        "objective is",
+
+        "designed to",
+
+        "we propose",
+        "we introduce",
+        "we present",
+
+        "we develop",
+        "we developed",
+
+        "to address",
+        "to tackle",
+        "to solve",
+
+        "focuses on",
+        "focus on",
+
+        "intended to",
+    )
+
+    # =========================================================
+    # RESULT CUES
+    # =========================================================
+
+    RESULT_CUES = (
+        "we found",
+        "we discovered",
+        "found that",
+        "discovered that",
+
+        "results show",
+        "results indicate",
+        "our results",
+
+        "achieved",
+        "achieves",
+
+        "outperforms",
+
+        "improves",
+        "improved",
+
+        "higher",
+        "lower",
+
+        "coverage",
+
+        "vulnerabilities",
+        "vulnerability",
+
+        "evaluated",
+        "evaluation",
+
+        "experiment",
+        "experiments",
+
+        "successfully",
+
+        "detected",
+        "identified",
+
+        "revealed",
+        "demonstrated",
+
+        "shows",
+        "showed",
+    )
+
+    # =========================================================
+    # LIMITATION CUES
+    # =========================================================
+
+    LIMITATION_CUES = (
+        "limitation",
+        "limitations",
+
+        "future work",
+        "future research",
+
+        "does not support",
+        "does not handle",
+        "does not address",
+
+        "cannot support",
+        "cannot handle",
+        "cannot address",
+
+        "cannot fully",
+
+        "could not",
+
+        "unable to",
+        "unable",
+
+        "drawback",
+        "shortcoming",
+
+        "not supported",
+        "not addressed",
+        "not covered",
+
+        "remains a challenge",
+        "still challenging",
+    )
+
+    # =========================================================
+    # INIT
+    # =========================================================
+
     def __init__(self):
-        logger.info("QA engine initialized")
+        pass
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TEXT NORMALIZATION
-    # ---------------------------------------------------------
+    # =========================================================
 
-    def _normalize_text(self, text):
+    def _normalize_text(self, text: str) -> str:
         if not text:
             return ""
 
         text = str(text)
 
-        text = re.sub(r"\bT\s+o\b", "To", text)
-        text = re.sub(r"\bA\s+DFEmu\b", "ADFEmu", text)
+        replacements = {
+            "\u00ad": "",
+            "\r\n": "\n",
+            "\r": "\n",
 
+            "interruptdriven": "interrupt-driven",
+            "interrupt driven": "interrupt-driven",
+        }
+
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+
+        # Repair words split across PDF line breaks:
+        # interrupt-\ntriggering -> interrupt-triggering
         text = re.sub(
-            r"(?<=[a-z])(?=[A-Z])",
-            " ",
-            text,
+            r"([A-Za-z])-\s*\n\s*([A-Za-z])",
+            r"\1-\2",
+            text
         )
 
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
+        # Remaining newlines become spaces.
+        text = re.sub(
+            r"\s+",
+            " ",
+            text
+        )
 
         return text.strip()
 
-    # ---------------------------------------------------------
-    # INTENT DETECTION
-    # ---------------------------------------------------------
-
-    def _detect_intent(self, question):
-        q = question.lower().strip()
-
-        # Problem / challenge / limitation questions must be
-        # checked before generic "what does" or "what are"
-        # patterns.
-        if any(
-            phrase in q
-            for phrase in [
-                "limitation",
-                "limitations",
-                "future work",
-                "future research",
-                "research gap",
-                "research gaps",
-                "challenge",
-                "challenges",
-                "drawback",
-                "drawbacks",
-                "what problem does",
-                "what problems does",
-                "what problem do",
-                "what problems do",
-                "what challenges does",
-                "what challenges do",
-                "what problem is",
-                "what problems are",
-            ]
-        ):
-            return "limitation"
-
-        # Objective / purpose questions.
-        if any(
-            phrase in q
-            for phrase in [
-                "main objective",
-                "main objectives",
-                "objective",
-                "objectives",
-                "purpose",
-                "aim",
-                "aims",
-                "goal",
-                "goals",
-                "what is the paper trying",
-                "what does the paper aim",
-            ]
-        ):
-            return "objective"
-
-        # Mechanism / how questions.
-        if re.search(
-            r"\bhow\b|\bhow does\b|\bhow do\b|\bhow is\b",
-            q,
-        ):
-            return "mechanism"
-
-        # Result / performance questions.
-        if any(
-            phrase in q
-            for phrase in [
-                "what results",
-                "what result",
-                "results did",
-                "result did",
-                "performance",
-                "achievements",
-                "achieve",
-                "improve",
-                "improvement",
-                "coverage",
-                "success rate",
-                "evaluation result",
-                "experimental result",
-                "main results",
-                "key results",
-            ]
-        ):
-            return "result"
-
-        # Definition questions.
-        if any(
-            phrase in q
-            for phrase in [
-                "what is adfemu",
-                "what does adfemu",
-                "what is this",
-                "what is the framework",
-                "what is the approach",
-            ]
-        ):
-            return "definition"
-
-        return "general"
-
-    # ---------------------------------------------------------
-    # TOKENIZATION
-    # ---------------------------------------------------------
-
-    def _tokenize(self, text):
-        stopwords = {
-            "what",
-            "is",
-            "are",
-            "the",
-            "a",
-            "an",
-            "of",
-            "to",
-            "in",
-            "on",
-            "for",
-            "and",
-            "or",
-            "does",
-            "do",
-            "how",
-            "did",
-            "this",
-            "that",
-            "document",
-            "paper",
-            "main",
-            "objective",
-            "objectives",
-            "results",
-            "result",
-            "achieve",
-            "achieved",
-            "use",
-            "using",
-            "used",
-            "with",
-            "by",
-            "from",
-            "its",
-            "their",
-            "it",
-            "be",
-            "can",
-            "will",
-            "would",
-            "about",
-            "which",
-            "was",
-            "were",
-            "has",
-            "have",
-            "had",
-            "does",
-            "problem",
-            "problems",
-            "challenge",
-            "challenges",
-            "limitation",
-            "limitations",
-            "main",
-        }
-
-        return {
-            token
-            for token in re.findall(
-                r"\b[a-zA-Z][a-zA-Z0-9_-]{2,}\b",
-                text.lower(),
-            )
-            if token not in stopwords
-        }
-
-    # ---------------------------------------------------------
-    # SENTENCE SPLITTING
-    # ---------------------------------------------------------
-
-    def _split_sentences(self, text):
-        text = self._normalize_text(text)
-
-        if not text:
-            return []
-
-        protected = re.sub(
-            r"\b(e\.g|i\.e|etc|Fig|Figs|Sec|Secs|No)\.",
-            lambda m: (
-                m.group(1).replace(".", "<DOT>")
-                + "<END>"
-            ),
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        parts = re.split(
-            r"(?<=[.!?])\s+(?=[A-Z0-9(\[])",
-            protected,
-        )
-
-        sentences = []
-
-        for part in parts:
-            part = part.replace("<DOT>", ".")
-            part = part.replace("<END>", ".")
-            part = part.strip()
-
-            if len(part) >= 20:
-                sentences.append(part)
-
-        return sentences
-
-    # ---------------------------------------------------------
-    # QUALITY FILTER
-    # ---------------------------------------------------------
-
-    def _is_low_quality_sentence(self, sentence):
-        """
-        Reject PDF metadata, headers, page numbers and
-        obviously weak evidence.
-        """
-
-        lower = sentence.lower().strip()
-
-        if len(lower) < 25:
-            return True
-
-        # Pure page-number / numeric fragments.
-        if re.fullmatch(
-            r"[\d\s;:().,\-]+",
-            lower,
-        ):
-            return True
-
-        # Common journal metadata / headers.
-        if re.search(
-            r"\bcomput mater contin\b",
-            lower,
-        ):
-            return True
-
-        if re.search(
-            r"\bvol\.\s*\d+",
-            lower,
-        ):
-            return True
-
-        if re.search(
-            r"\bissn\b",
-            lower,
-        ):
-            return True
-
-        # Copyright / publication metadata.
-        if "copyright ©" in lower:
-            return True
-
-        if (
-            "published by" in lower
-            and "press" in lower
-        ):
-            return True
-
-        if "creative commons" in lower:
-            return True
-
-        # Keyword metadata.
-        if lower.startswith("keywords:"):
-            return True
-
-        return False
-
-    # ---------------------------------------------------------
-    # FUTURE WORK DETECTION
-    # ---------------------------------------------------------
-
-    def _is_future_work(self, text):
-        t = text.lower()
-
-        patterns = [
-            r"\bfuture work\b",
-            r"\bfuture research\b",
-            r"\bin future\b",
-            r"\bin the future\b",
-            r"\bwe plan to\b",
-            r"\bwe intend to\b",
-            r"\bwe will explore\b",
-            r"\bwe will investigate\b",
-            r"\bwe will extend\b",
-            r"\bremain(s)? to be addressed\b",
-            r"\bremains? an open\b",
-            r"\bleft for future\b",
-        ]
-
-        return any(
-            re.search(pattern, t)
-            for pattern in patterns
-        )
-
-    # ---------------------------------------------------------
-    # OBJECTIVE EXTRACTION
-    # ---------------------------------------------------------
-
-    def _extract_objective_block(self, search_results):
-        combined = "\n".join(
-            self._normalize_text(
-                result.get("text", "")
-            )
-            for result in search_results
-        )
-
-        if not combined:
-            return None
-
-        anchor_patterns = [
-            r"to\s+clearly\s+state\s+the\s+objectives\s+of\s+this\s+work,\s*our\s+research\s+aims\s+to\s*:",
-            r"the\s+objectives\s+of\s+this\s+work\s+.*?our\s+research\s+aims\s+to\s*:",
-            r"our\s+research\s+aims\s+to\s*:",
-            r"our\s+main\s+objectives\s+are\s*:",
-            r"the\s+main\s+objectives\s+are\s*:",
-        ]
-
-        anchor_match = None
-
-        for pattern in anchor_patterns:
-            match = re.search(
-                pattern,
-                combined,
-                flags=re.IGNORECASE,
-            )
-
-            if match:
-                anchor_match = match
-                break
-
-        if not anchor_match:
-            return None
-
-        tail = combined[anchor_match.end():]
-
-        item_patterns = [
-            r"\(?1\)?\s*[:.\-]?\s*(.*?)(?=\s*;?\s*\(?2\)?\s*[:.\-])",
-            r"\(?2\)?\s*[:.\-]?\s*(.*?)(?=\s*;?\s*\(?3\)?\s*[:.\-])",
-            r"\(?3\)?\s*[:.\-]?\s*(.*?)(?=\s+(?:our\s+contributions|in\s+summary|the\s+remainder|experimental\s+results|we\s+evaluate|we\s+conduct)|$)",
-        ]
-
-        items = []
-
-        for pattern in item_patterns:
-            match = re.search(
-                pattern,
-                tail,
-                flags=re.IGNORECASE | re.DOTALL,
-            )
-
-            if match:
-                item = self._clean_answer_text(
-                    match.group(1)
-                )
-
-                if item:
-                    items.append(item)
-
-        if items:
-            return "\n".join(
-                f"{index}. {item}"
-                for index, item in enumerate(
-                    items,
-                    start=1,
-                )
-            )
-
-        fallback = tail[:1200]
-
-        fallback = re.split(
-            r"\b(?:our contributions|in summary|the remainder)\b",
-            fallback,
-            maxsplit=1,
-            flags=re.IGNORECASE,
-        )[0]
-
-        fallback = self._clean_answer_text(
-            fallback
-        )
-
-        return fallback or None
-
-    # ---------------------------------------------------------
-    # DEFINITION EXTRACTION
-    # ---------------------------------------------------------
-
-    def _extract_definition(
-        self,
-        question,
-        search_results,
-    ):
-        candidates = []
-
-        for result in search_results:
-            text = self._normalize_text(
-                result.get("text", "")
-            )
-
-            for position, sentence in enumerate(
-                self._split_sentences(text)
-            ):
-                lower = sentence.lower()
-
-                if self._is_low_quality_sentence(
-                    sentence
-                ):
-                    continue
-
-                if "adfemu" not in lower:
-                    continue
-
-                if self._is_future_work(sentence):
-                    continue
-
-                score = 0.0
-
-                if re.search(
-                    r"\badfemu\s+is\s+(?:an?|the)\b",
-                    lower,
-                ):
-                    score += 10
-
-                if re.search(
-                    r"\bwe\s+propose\s+adfemu\b",
-                    lower,
-                ):
-                    score += 9
-
-                if re.search(
-                    r"\bpropose\s+adfemu\b",
-                    lower,
-                ):
-                    score += 8
-
-                if re.search(
-                    r"\badfemu,\s+(?:an?|the)\b",
-                    lower,
-                ):
-                    score += 8
-
-                if re.search(
-                    r"\badfemu\s+refers\s+to\b",
-                    lower,
-                ):
-                    score += 8
-
-                for cue in [
-                    "framework",
-                    "approach",
-                    "system",
-                    "method",
-                    "technique",
-                    "emulation",
-                    "re-hosting",
-                ]:
-                    if cue in lower:
-                        score += 1
-
-                if (
-                    "objectives of this work"
-                    in lower
-                ):
-                    score -= 5
-
-                if "research aims to" in lower:
-                    score -= 5
-
-                score -= position * 0.01
-
-                if score > 0:
-                    candidates.append(
-                        {
-                            "score": score,
-                            "text": sentence,
-                        }
-                    )
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        return self._clean_answer_text(
-            candidates[0]["text"]
-        )
-
-    # ---------------------------------------------------------
-    # MECHANISM EXTRACTION
-    # ---------------------------------------------------------
-
-    def _extract_mechanism(
-        self,
-        question,
-        search_results,
-    ):
-        query_terms = self._tokenize(question)
-
-        candidates = []
-
-        mechanism_cues = {
-            "leverages",
-            "uses",
-            "using",
-            "guides",
-            "guide",
-            "infer",
-            "infers",
-            "inference",
-            "generate",
-            "generates",
-            "generation",
-            "configure",
-            "configures",
-            "automatically",
-            "combines",
-            "integrates",
-            "emulates",
-            "emulation",
-            "symbolic",
-            "execution",
-            "llm",
-            "language",
-            "model",
-            "dma",
-            "input",
-            "path-sensitive",
-            "constraints",
-            "monitoring",
-        }
-
-        result_cues = {
-            "achieves",
-            "achieved",
-            "results",
-            "coverage",
-            "crashes",
-            "success rate",
-            "%",
-            "compared to",
-        }
-
-        for result in search_results:
-            raw_text = self._normalize_text(
-                result.get("text", "")
-            )
-
-            sentences = self._split_sentences(
-                raw_text
-            )
-
-            chunk_has_adfemu = (
-                "adfemu" in raw_text.lower()
-            )
-
-            for position, sentence in enumerate(
-                sentences
-            ):
-                lower = sentence.lower()
-
-                if self._is_low_quality_sentence(
-                    sentence
-                ):
-                    continue
-
-                if self._is_future_work(sentence):
-                    continue
-
-                score = 0.0
-
-                sentence_terms = self._tokenize(
-                    sentence
-                )
-
-                overlap = (
-                    query_terms & sentence_terms
-                )
-
-                score += len(overlap) * 1.5
-
-                mechanism_count = sum(
-                    1
-                    for cue in mechanism_cues
-                    if cue in lower
-                )
-
-                score += mechanism_count * 2.0
-
-                if chunk_has_adfemu:
-                    score += 1.5
-
-                result_count = sum(
-                    1
-                    for cue in result_cues
-                    if cue in lower
-                )
-
-                score -= result_count * 2.0
-
-                if (
-                    "research aims to" in lower
-                    or "objectives of this work"
-                    in lower
-                ):
-                    score -= 6
-
-                score -= position * 0.02
-
-                if score > 0:
-                    candidates.append(
-                        {
-                            "score": score,
-                            "text": sentence,
-                        }
-                    )
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        return self._clean_answer_text(
-            candidates[0]["text"]
-        )
-
-    # ---------------------------------------------------------
-    # RESULT EXTRACTION
-    # ---------------------------------------------------------
-
-    def _extract_result(
-        self,
-        question,
-        search_results,
-    ):
-        query_terms = self._tokenize(question)
-
-        candidates = []
-
-        result_cues = [
-            "achieves",
-            "achieved",
-            "achieve",
-            "results",
-            "experimental results",
-            "evaluation",
-            "success",
-            "coverage",
-            "path exploration",
-            "crashes",
-            "outperformed",
-            "improved",
-            "improvement",
-            "higher",
-            "better",
-            "compared to",
-            "state of the art",
-        ]
-
-        for result in search_results:
-            raw_text = self._normalize_text(
-                result.get("text", "")
-            )
-
-            for position, sentence in enumerate(
-                self._split_sentences(raw_text)
-            ):
-                lower = sentence.lower()
-
-                if self._is_low_quality_sentence(
-                    sentence
-                ):
-                    continue
-
-                if self._is_future_work(sentence):
-                    continue
-
-                score = 0.0
-
-                sentence_terms = self._tokenize(
-                    sentence
-                )
-
-                overlap = (
-                    query_terms & sentence_terms
-                )
-
-                score += len(overlap) * 2.0
-
-                cue_count = sum(
-                    1
-                    for cue in result_cues
-                    if cue in lower
-                )
-
-                score += cue_count * 2.0
-
-                if re.search(
-                    r"\b\d+(?:\.\d+)?\s*%",
-                    sentence,
-                ):
-                    score += 8
-
-                if re.search(
-                    r"\b\d+(?:\.\d+)?\b",
-                    sentence,
-                ):
-                    score += 3
-
-                if (
-                    "overall" in lower
-                    or "experimental results"
-                    in lower
-                    or "our experimental results"
-                    in lower
-                ):
-                    score += 3
-
-                if (
-                    "research aims to" in lower
-                    or "objectives of this work"
-                    in lower
-                ):
-                    score -= 8
-
-                score -= position * 0.01
-
-                if score > 0:
-                    candidates.append(
-                        {
-                            "score": score,
-                            "text": sentence,
-                        }
-                    )
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        best = candidates[0]["text"]
-
-        best = re.sub(
-            r"\s*(?:as\s+a\s+result|therefore)\s*,?\s*$",
-            "",
-            best,
-            flags=re.IGNORECASE,
-        )
-
-        return self._clean_answer_text(best)
-
-    # ---------------------------------------------------------
-    # LIMITATION / CHALLENGE / PROBLEM
-    # ---------------------------------------------------------
-
-    def _extract_limitation(
-        self,
-        question,
-        search_results,
-    ):
-        """
-        Prefer explicit limitations, challenges and
-        problem statements.
-
-        Future-work statements are only preferred when
-        the question explicitly asks about future work
-        or research gaps.
-        """
-
-        question_lower = question.lower()
-
-        query_terms = self._tokenize(question)
-
-        asks_future = any(
-            phrase in question_lower
-            for phrase in [
-                "future work",
-                "future research",
-                "research gap",
-                "research gaps",
-            ]
-        )
-
-        candidates = []
-
-        explicit_cues = [
-            "limitation",
-            "limitations",
-            "challenge",
-            "challenges",
-            "drawback",
-            "drawbacks",
-            "problem",
-            "problems",
-            "lack",
-            "limited",
-            "not support",
-            "does not support",
-            "do not support",
-            "does not address",
-            "do not address",
-            "cannot",
-            "unable to",
-            "difficult",
-            "difficulty",
-            "restrict",
-            "restricted",
-            "hinder",
-            "hindering",
-            "lack of",
-        ]
-
-        for result in search_results:
-            text = self._normalize_text(
-                result.get("text", "")
-            )
-
-            source_score = float(
-                result.get("score", 0.0)
-            )
-
-            for position, sentence in enumerate(
-                self._split_sentences(text)
-            ):
-                lower = sentence.lower()
-
-                if self._is_low_quality_sentence(
-                    sentence
-                ):
-                    continue
-
-                sentence_terms = self._tokenize(
-                    sentence
-                )
-
-                overlap = (
-                    query_terms & sentence_terms
-                )
-
-                score = len(overlap) * 2.0
-
-                explicit_count = sum(
-                    1
-                    for cue in explicit_cues
-                    if cue in lower
-                )
-
-                score += explicit_count * 3.0
-
-                # Strong signals for actual challenge /
-                # limitation statements.
-                if any(
-                    phrase in lower
-                    for phrase in [
-                        "faces challenges",
-                        "face challenges",
-                        "still faces challenges",
-                        "lack adequate support",
-                        "greatly restricts",
-                        "limits applicability",
-                        "limits scalability",
-                        "hinders scalability",
-                        "requires manual",
-                        "labor-intensive",
-                        "manual modeling",
-                        "manual intervention",
-                    ]
-                ):
-                    score += 6
-
-                # Explicit statements that existing methods
-                # cannot handle or adequately support something.
-                if re.search(
-                    r"\b(existing|current|traditional)\s+"
-                    r"(?:methods?|techniques?|frameworks?|approaches?)"
-                    r".{0,120}\b"
-                    r"(lack|limited|cannot|unable|"
-                    r"do not support|does not support|"
-                    r"do not address|does not address)\b",
-                    lower,
-                ):
-                    score += 6
-
-                # Future work is useful only when the question
-                # explicitly asks for future work / gaps.
-                if self._is_future_work(sentence):
-                    if asks_future:
-                        score += 3
-                    else:
-                        score -= 7
-
-                # Pure numerical result statements are usually
-                # not limitations.
-                if re.search(
-                    r"\b\d+(?:\.\d+)?\s*%",
-                    sentence,
-                ):
-                    score -= 3
-
-                # Slightly favor retrieved evidence, but do not
-                # let retrieval score overpower explicit wording.
-                score += source_score * 0.5
-
-                score -= position * 0.01
-
-                if score > 0:
-                    candidates.append(
-                        {
-                            "score": score,
-                            "text": sentence,
-                        }
-                    )
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        return self._clean_answer_text(
-            candidates[0]["text"]
-        )
-
-    # ---------------------------------------------------------
-    # GENERAL EXTRACTION
-    # ---------------------------------------------------------
-
-    def _extract_general(
-        self,
-        question,
-        search_results,
-    ):
-        query_terms = self._tokenize(question)
-
-        candidates = []
-
-        for result in search_results:
-            text = self._normalize_text(
-                result.get("text", "")
-            )
-
-            source_score = float(
-                result.get("score", 0.0)
-            )
-
-            for position, sentence in enumerate(
-                self._split_sentences(text)
-            ):
-                lower = sentence.lower()
-
-                if self._is_low_quality_sentence(
-                    sentence
-                ):
-                    continue
-
-                if self._is_future_work(sentence):
-                    continue
-
-                sentence_terms = self._tokenize(
-                    sentence
-                )
-
-                overlap = (
-                    query_terms & sentence_terms
-                )
-
-                score = (
-                    len(overlap) * 2.5
-                    + source_score
-                )
-
-                score -= position * 0.01
-
-                if score > 0:
-                    candidates.append(
-                        {
-                            "score": score,
-                            "text": sentence,
-                        }
-                    )
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        return self._clean_answer_text(
-            candidates[0]["text"]
-        )
-
-    # ---------------------------------------------------------
-    # ANSWER CLEANING
-    # ---------------------------------------------------------
-
-    def _clean_answer_text(self, text):
+    def _clean_answer_text(self, text: str) -> str:
         if not text:
             return ""
 
         text = self._normalize_text(text)
 
-        text = re.sub(r"\s+", " ", text)
-
-        text = re.sub(
-            r"\bT\s+o\b",
-            "To",
-            text,
-        )
-
-        text = re.sub(
-            r"\bA\s+DFEmu\b",
-            "ADFEmu",
-            text,
-        )
-
+        # Only punctuation spacing is changed.
+        # No numbers or technical content are removed.
         text = re.sub(
             r"\s+([,.;:!?])",
             r"\1",
-            text,
+            text
         )
 
         text = re.sub(
-            r"([,.;:!?])(?=[A-Za-z])",
-            r"\1 ",
-            text,
+            r"([(\[])\s+",
+            r"\1",
+            text
+        )
+
+        text = re.sub(
+            r"\s+([)\]])",
+            r"\1",
+            text
         )
 
         return text.strip()
 
-    # ---------------------------------------------------------
-    # MAIN ANSWER FUNCTION
-    # ---------------------------------------------------------
+    # =========================================================
+    # SENTENCE SPLITTING
+    # =========================================================
+
+    def _split_sentences(self, text: str) -> List[str]:
+        """
+        Research-paper-aware sentence splitting.
+
+        Protects:
+        - e.g.
+        - i.e.
+        - etc.
+        - Fig.
+        - Eq.
+        - initials
+        - decimal numbers
+
+        so that they do not accidentally become sentence
+        boundaries.
+        """
+
+        text = self._normalize_text(text)
+
+        if not text:
+            return []
+
+        # -----------------------------------------------------
+        # Protect common abbreviations
+        # -----------------------------------------------------
+
+        protected = {
+            "e.g.": "__EG__",
+            "i.e.": "__IE__",
+            "etc.": "__ETC__",
+
+            "Fig.": "__FIG__",
+            "Figs.": "__FIGS__",
+
+            "Eq.": "__EQ__",
+            "Eqs.": "__EQS__",
+
+            "Dr.": "__DR__",
+            "Mr.": "__MR__",
+            "Mrs.": "__MRS__",
+        }
+
+        for old, new in protected.items():
+            text = text.replace(old, new)
+
+        # -----------------------------------------------------
+        # Protect decimal points
+        # -----------------------------------------------------
+
+        text = re.sub(
+            r"(?<=\d)\.(?=\d)",
+            "__DECIMAL__",
+            text
+        )
+
+        # -----------------------------------------------------
+        # Protect initials
+        # Example:
+        # A. B. Smith
+        # -----------------------------------------------------
+
+        text = re.sub(
+            r"\b([A-Z])\.(?=\s+[A-Z])",
+            r"\1__INITIAL__",
+            text
+        )
+
+        # -----------------------------------------------------
+        # Sentence boundary
+        # -----------------------------------------------------
+
+        parts = re.split(
+            r"(?<=[.!?])\s+(?=[A-Z0-9])",
+            text
+        )
+
+        # -----------------------------------------------------
+        # Restore protected content
+        # -----------------------------------------------------
+
+        restored = {
+            "__EG__": "e.g.",
+            "__IE__": "i.e.",
+            "__ETC__": "etc.",
+
+            "__FIG__": "Fig.",
+            "__FIGS__": "Figs.",
+
+            "__EQ__": "Eq.",
+            "__EQS__": "Eqs.",
+
+            "__DR__": "Dr.",
+            "__MR__": "Mr.",
+            "__MRS__": "Mrs.",
+
+            "__DECIMAL__": ".",
+            "__INITIAL__": ".",
+        }
+
+        sentences = []
+
+        for part in parts:
+
+            for old, new in restored.items():
+                part = part.replace(
+                    old,
+                    new
+                )
+
+            part = self._clean_answer_text(
+                part
+            )
+
+            if len(part) < 20:
+                continue
+
+            if self._is_bad_sentence(
+                part
+            ):
+                continue
+
+            sentences.append(part)
+
+        return sentences
+
+    # =========================================================
+    # TOKENIZATION
+    # =========================================================
+
+    def _tokenize(self, text: str) -> List[str]:
+        return re.findall(
+            r"[A-Za-z][A-Za-z0-9_-]*",
+            text.lower()
+        )
+
+    def _important_tokens(
+        self,
+        text: str
+    ) -> set:
+
+        return {
+            token
+            for token in self._tokenize(text)
+            if token not in self.STOPWORDS
+            and len(token) > 2
+        }
+
+    # =========================================================
+    # QUESTION ENTITIES
+    # =========================================================
+
+    def _extract_question_entities(
+        self,
+        question: str
+    ) -> List[str]:
+
+        if not question:
+            return []
+
+        entities = []
+
+        # -----------------------------------------------------
+        # CamelCase / mixed-case technical names
+        # Example: AidFuzzer
+        # -----------------------------------------------------
+
+        entities.extend(
+            re.findall(
+                r"\b[A-Z][A-Za-z0-9]*"
+                r"[A-Z][A-Za-z0-9_-]*\b",
+                question
+            )
+        )
+
+        # -----------------------------------------------------
+        # Acronyms
+        # Example: AIM, LLM, HIL
+        # -----------------------------------------------------
+
+        entities.extend(
+            re.findall(
+                r"\b[A-Z]{2,}[0-9]*\b",
+                question
+            )
+        )
+
+        # -----------------------------------------------------
+        # Other capitalized names
+        # -----------------------------------------------------
+
+        for token in re.findall(
+            r"\b[A-Z][A-Za-z0-9_-]{2,}\b",
+            question
+        ):
+
+            lower = token.lower()
+
+            if lower in self.QUESTION_WORDS:
+                continue
+
+            if lower in self.GENERIC_TERMS:
+                continue
+
+            entities.append(token)
+
+        # -----------------------------------------------------
+        # Remove duplicates
+        # -----------------------------------------------------
+
+        unique = []
+
+        for entity in entities:
+
+            lower = entity.lower()
+
+            if lower in self.QUESTION_WORDS:
+                continue
+
+            if lower in self.GENERIC_TERMS:
+                continue
+
+            if not any(
+                lower == existing.lower()
+                for existing in unique
+            ):
+                unique.append(entity)
+
+        return unique
+
+    # =========================================================
+    # QUESTION TOPIC TOKENS
+    # =========================================================
+
+    def _question_focus_tokens(
+        self,
+        question: str
+    ) -> set:
+
+        tokens = self._important_tokens(
+            question
+        )
+
+        return tokens - self.GENERIC_TERMS
+
+    # =========================================================
+    # INTENT DETECTION
+    # =========================================================
+
+    def _detect_intent(
+        self,
+        question: str
+    ) -> str:
+
+        q = self._normalize_text(
+            question
+        ).lower()
+
+        # -----------------------------------------------------
+        # Addressed problem
+        # -----------------------------------------------------
+
+        if re.search(
+            r"\bwhat\s+problem\b|"
+            r"\bwhat\s+issue\b|"
+            r"\bwhich\s+problem\b|"
+            r"\bwhat\s+challenge\b|"
+            r"\bproblem\s+does\b|"
+            r"\bissue\s+does\b|"
+            r"\bchallenge\s+does\b",
+            q
+        ):
+            return "addressed_problem"
+
+        # -----------------------------------------------------
+        # Limitations
+        # -----------------------------------------------------
+
+        if re.search(
+            r"\bwhat\s+are\s+the\s+limitations?\b|"
+            r"\bwhat\s+limitations?\b|"
+            r"\bwhat\s+are\s+the\s+drawbacks?\b|"
+            r"\bwhat\s+are\s+the\s+weaknesses?\b|"
+            r"\bwhat\s+gaps?\b|"
+            r"\bwhat\s+research\s+gaps?\b",
+            q
+        ):
+            return "limitation"
+
+        # -----------------------------------------------------
+        # Objective
+        # -----------------------------------------------------
+
+        if re.search(
+            r"\bmain\s+objective\b|"
+            r"\bprimary\s+objective\b|"
+            r"\bobjective\s+of\b|"
+            r"\bpurpose\s+of\b|"
+            r"\bgoal\s+of\b|"
+            r"\bwhat\s+does\s+.+\s+aim\b|"
+            r"\bwhat\s+is\s+the\s+purpose\b|"
+            r"\bwhat\s+is\s+the\s+main\s+goal\b",
+            q
+        ):
+            return "objective"
+
+        # -----------------------------------------------------
+        # Results
+        # -----------------------------------------------------
+
+        if re.search(
+            r"\bmain\s+results?\b|"
+            r"\bkey\s+results?\b|"
+            r"\bwhat\s+did\s+.+\s+find\b|"
+            r"\bwhat\s+were\s+the\s+results?\b|"
+            r"\bfindings?\b|"
+            r"\bachievements?\b|"
+            r"\bwhat\s+was\s+achieved\b",
+            q
+        ):
+            return "result"
+
+        # -----------------------------------------------------
+        # Mechanism
+        # -----------------------------------------------------
+
+        if re.search(
+            r"^\s*how\s+",
+            q
+        ) or re.search(
+            r"\bhow\s+does\b|"
+            r"\bhow\s+do\b|"
+            r"\bhow\s+is\b|"
+            r"\bhow\s+are\b|"
+            r"\bmechanism\b|"
+            r"\bprocess\b",
+            q
+        ):
+            return "mechanism"
+
+        # -----------------------------------------------------
+        # Definition
+        # -----------------------------------------------------
+
+        if re.search(
+            r"^\s*what\s+is\b|"
+            r"^\s*what\s+are\b",
+            q
+        ):
+            return "definition"
+
+        return "general"
+
+    # =========================================================
+    # QUALITY FILTERS
+    # =========================================================
+
+    def _is_bad_sentence(
+        self,
+        sentence: str
+    ) -> bool:
+
+        if not sentence:
+            return True
+
+        sentence = sentence.strip()
+
+        if len(sentence) < 20:
+            return True
+
+        if re.fullmatch(
+            r"[\d\s.,:;()\-]+",
+            sentence
+        ):
+            return True
+
+        lower = sentence.lower()
+
+        if lower.startswith(
+            "references"
+        ):
+            return True
+
+        if lower.startswith(
+            "acknowledgment"
+        ):
+            return True
+
+        if lower.startswith(
+            "acknowledgements"
+        ):
+            return True
+
+        return False
+
+    def _is_comparison_sentence(
+        self,
+        sentence: str
+    ) -> bool:
+
+        lower = sentence.lower()
+
+        return any(
+            phrase in lower
+            for phrase in self.COMPARISON_PHRASES
+        )
+
+    def _is_limitation_sentence(
+        self,
+        sentence: str
+    ) -> bool:
+
+        lower = sentence.lower()
+
+        return any(
+            phrase in lower
+            for phrase in self.LIMITATION_CUES
+        )
+
+    def _contains_entity(
+        self,
+        sentence: str,
+        entities: List[str]
+    ) -> bool:
+
+        if not entities:
+            return False
+
+        lower = sentence.lower()
+
+        return any(
+            entity.lower() in lower
+            for entity in entities
+        )
+
+    # =========================================================
+    # CANDIDATE COLLECTION
+    # =========================================================
+
+    def _collect_candidates(
+        self,
+        question: str,
+        search_results: List[Dict]
+    ) -> List[Dict]:
+
+        entities = self._extract_question_entities(
+            question
+        )
+
+        focus_tokens = self._question_focus_tokens(
+            question
+        )
+
+        candidates = []
+
+        for result_index, result in enumerate(
+            search_results
+        ):
+
+            text = result.get(
+                "text",
+                ""
+            )
+
+            if not text:
+                continue
+
+            sentences = self._split_sentences(
+                text
+            )
+
+            for sentence_index, sentence in enumerate(
+                sentences
+            ):
+
+                sentence = self._clean_answer_text(
+                    sentence
+                )
+
+                if self._is_bad_sentence(
+                    sentence
+                ):
+                    continue
+
+                candidates.append({
+                    "text": sentence,
+
+                    "source": result.get(
+                        "source",
+                        "Unknown"
+                    ),
+
+                    "retrieval_score": float(
+                        result.get(
+                            "score",
+                            0.0
+                        )
+                    ),
+
+                    "result_index": result_index,
+
+                    "sentence_index": sentence_index,
+
+                    "entities": entities,
+
+                    "focus_tokens": focus_tokens,
+                })
+
+        return candidates
+
+    def _deduplicate(
+        self,
+        candidates: List[Dict]
+    ) -> List[Dict]:
+
+        seen = set()
+        output = []
+
+        for candidate in candidates:
+
+            normalized = re.sub(
+                r"\W+",
+                " ",
+                candidate["text"].lower()
+            ).strip()
+
+            if normalized in seen:
+                continue
+
+            seen.add(normalized)
+            output.append(candidate)
+
+        return output
+
+    # =========================================================
+    # GENERIC SCORING
+    # =========================================================
+
+    def _overlap_score(
+        self,
+        question: str,
+        sentence: str
+    ) -> float:
+
+        question_words = self._question_focus_tokens(
+            question
+        )
+
+        sentence_words = self._important_tokens(
+            sentence
+        )
+
+        if not question_words:
+            return 0.0
+
+        overlap = (
+            question_words &
+            sentence_words
+        )
+
+        return len(overlap) / len(
+            question_words
+        )
+
+    def _topic_overlap_score(
+        self,
+        candidate: Dict
+    ) -> float:
+
+        focus_tokens = candidate.get(
+            "focus_tokens",
+            set()
+        )
+
+        if not focus_tokens:
+            return 0.0
+
+        sentence_tokens = self._important_tokens(
+            candidate["text"]
+        )
+
+        return len(
+            focus_tokens &
+            sentence_tokens
+        ) / len(
+            focus_tokens
+        )
+
+    def _entity_score(
+        self,
+        sentence: str,
+        entities: List[str]
+    ) -> float:
+
+        if not entities:
+            return 0.0
+
+        lower = sentence.lower()
+
+        matched = sum(
+            1
+            for entity in entities
+            if entity.lower() in lower
+        )
+
+        return matched / len(
+            entities
+        )
+
+    def _cue_score(
+        self,
+        sentence: str,
+        cues: Tuple[str, ...]
+    ) -> float:
+
+        lower = sentence.lower()
+
+        return sum(
+            1
+            for cue in cues
+            if cue in lower
+        )
+
+    def _base_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        overlap = self._overlap_score(
+            question,
+            candidate["text"]
+        )
+
+        entity = self._entity_score(
+            candidate["text"],
+            candidate["entities"]
+        )
+
+        topic_overlap = self._topic_overlap_score(
+            candidate
+        )
+
+        retrieval = candidate[
+            "retrieval_score"
+        ]
+
+        return (
+            0.20 * retrieval
+            + 0.35 * overlap
+            + 0.25 * entity
+            + 0.20 * topic_overlap
+        )
+
+    # =========================================================
+    # ADDRESSED PROBLEM
+    # =========================================================
+
+    def _problem_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        score += (
+            0.25 *
+            self._cue_score(
+                text,
+                self.PROBLEM_CUES
+            )
+        )
+
+        for pattern in self.STRONG_PROBLEM_PATTERNS:
+
+            if pattern in lower:
+                score += 1.00
+
+        # Concrete consequences.
+        if re.search(
+            r"\b(crash|crashes|stuck|"
+            r"halt|halts|reset|resets|"
+            r"infinite loop|hang|hangs)\b",
+            lower
+        ):
+            score += 0.70
+
+        # Domain-specific evidence.
+        if re.search(
+            r"\b(interrupt|interrupts|"
+            r"interrupt triggering|"
+            r"triggering interrupts|"
+            r"interrupt handling)\b",
+            lower
+        ):
+            score += 0.55
+
+        # Solution statement should not beat the
+        # actual problem statement.
+        if (
+            re.search(
+                r"\bwe\s+(present|introduce|propose)\b",
+                lower
+            )
+            and
+            re.search(
+                r"\b(to\s+tackle|to\s+address|"
+                r"to\s+solve)\b",
+                lower
+            )
+        ):
+            score -= 1.75
+
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 2.00
+
+        return score
+
+    def _extract_addressed_problem(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._problem_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        direct = []
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            text = candidate["text"]
+            lower = text.lower()
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                continue
+
+            # Skip "we present X to tackle..."
+            # as the primary problem answer.
+            if (
+                re.search(
+                    r"\bwe\s+(present|introduce|propose)\b",
+                    lower
+                )
+                and
+                re.search(
+                    r"\b(to\s+tackle|to\s+address|"
+                    r"to\s+solve)\b",
+                    lower
+                )
+            ):
+                continue
+
+            direct_problem = (
+                any(
+                    pattern in lower
+                    for pattern
+                    in self.STRONG_PROBLEM_PATTERNS
+                )
+                or (
+                    "challenge" in lower
+                    and (
+                        "interrupt" in lower
+                        or "trigger" in lower
+                    )
+                )
+                or (
+                    "problem" in lower
+                    and (
+                        "interrupt" in lower
+                        or "trigger" in lower
+                    )
+                )
+            )
+
+            if direct_problem:
+                direct.append(candidate)
+
+        if direct:
+
+            answer_parts = [
+                direct[0]["text"]
+            ]
+
+            # Add one supporting consequence sentence.
+            for candidate in direct[1:]:
+
+                lower = candidate[
+                    "text"
+                ].lower()
+
+                if (
+                    "crash" in lower
+                    or "stuck" in lower
+                    or "halt" in lower
+                    or "reset" in lower
+                    or "wrong" in lower
+                    or "incorrect" in lower
+                    or "random" in lower
+                ):
+                    answer_parts.append(
+                        candidate["text"]
+                    )
+                    break
+
+            return " ".join(
+                answer_parts
+            )
+
+        # Safe fallback.
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            if self._is_comparison_sentence(
+                candidate["text"]
+            ):
+                continue
+
+            return candidate["text"]
+
+        return self._not_found()
+
+    # =========================================================
+    # DEFINITION
+    # =========================================================
+
+    def _has_explicit_definition(
+        self,
+        text: str,
+        entities: List[str]
+    ) -> bool:
+
+        if not text or not entities:
+            return False
+
+        lower = text.lower()
+
+        for entity in entities:
+
+            entity_pattern = re.escape(
+                entity.lower()
+            )
+
+            patterns = (
+                rf"\b{entity_pattern}\s+"
+                rf"is\s+(?:an?|the)\b",
+
+                rf"\b{entity_pattern},\s+"
+                rf"(?:an?|the)\b",
+
+                rf"\bwe\s+introduce\s+"
+                rf"{entity_pattern},\s+"
+                rf"(?:an?|the)\b",
+
+                rf"\bwe\s+present\s+"
+                rf"{entity_pattern},\s+"
+                rf"(?:an?|the)\b",
+
+                rf"\bwe\s+propose\s+"
+                rf"{entity_pattern},\s+"
+                rf"(?:an?|the)\b",
+            )
+
+            if any(
+                re.search(
+                    pattern,
+                    lower
+                )
+                for pattern in patterns
+            ):
+                return True
+
+        return False
+
+    def _definition_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        if candidate["entities"]:
+
+            if self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                score += 1.50
+            else:
+                score -= 2.50
+
+        if self._has_explicit_definition(
+            text,
+            candidate["entities"]
+        ):
+            score += 2.75
+
+        if re.search(
+            r"\bwe\s+(introduce|present|propose)\b",
+            lower
+        ):
+            score += 0.40
+
+        # Strongly reject comparison material.
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 4.00
+
+        if "orthogonal challenge" in lower:
+            score -= 4.00
+
+        if "not addressed by" in lower:
+            score -= 4.00
+
+        if "not supported by" in lower:
+            score -= 3.50
+
+        if self._is_limitation_sentence(
+            text
+        ):
+            score -= 1.75
+
+        return score
+
+    def _extract_definition(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._definition_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        # -----------------------------------------------------
+        # Pass 1: explicit definition
+        # -----------------------------------------------------
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            text = candidate["text"]
+            lower = text.lower()
+
+            if not self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                continue
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                continue
+
+            if (
+                "not addressed by" in lower
+                or "orthogonal challenge" in lower
+                or "not supported by" in lower
+            ):
+                continue
+
+            if self._has_explicit_definition(
+                text,
+                candidate["entities"]
+            ):
+                return text
+
+        # -----------------------------------------------------
+        # Pass 2: introduction sentence
+        # -----------------------------------------------------
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            text = candidate["text"]
+            lower = text.lower()
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                continue
+
+            if not self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                continue
+
+            if (
+                "not addressed by" in lower
+                or "orthogonal challenge" in lower
+            ):
+                continue
+
+            if re.search(
+                r"\bwe\s+(introduce|present|propose)\b",
+                lower
+            ):
+                return text
+
+        return self._not_found()
+
+    # =========================================================
+    # MECHANISM
+    # =========================================================
+
+    def _mechanism_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        # Primary entity.
+        if candidate["entities"]:
+
+            if self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                score += 1.80
+            else:
+                score -= 1.80
+
+        # Topic match.
+        score += (
+            0.80 *
+            self._topic_overlap_score(
+                candidate
+            )
+        )
+
+        # Mechanism vocabulary.
+        score += (
+            0.35 *
+            self._cue_score(
+                text,
+                self.MECHANISM_CUES
+            )
+        )
+
+        # Strong mechanism structure.
+        if re.search(
+            r"\b(uses|using|via|through|"
+            r"handles|triggers|firing|"
+            r"monitors|identifies|models|"
+            r"analyzes|selects|adapts|"
+            r"determines|tracks|checks)\b",
+            lower
+        ):
+            score += 1.00
+
+        if re.search(
+            r"\bmechanism\b|"
+            r"\balgorithm\b|"
+            r"\bframework\b|"
+            r"\barchitecture\b",
+            lower
+        ):
+            score += 0.35
+
+        # Do not select comparison sentences.
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 2.00
+
+        # Result-only sentences should not dominate.
+        if re.search(
+            r"\b(results?|vulnerabilit|"
+            r"outperforms?|evaluation|"
+            r"experiments?)\b",
+            lower
+        ):
+            score -= 0.30
+
+        return score
+
+    def _extract_mechanism(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._mechanism_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            text = candidate["text"]
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                continue
+
+            if (
+                candidate["entities"]
+                and not self._contains_entity(
+                    text,
+                    candidate["entities"]
+                )
+            ):
+                continue
+
+            return text
+
+        return self._not_found()
+
+    # =========================================================
+    # OBJECTIVE
+    # =========================================================
+
+    def _objective_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        score += (
+            0.40 *
+            self._cue_score(
+                text,
+                self.OBJECTIVE_CUES
+            )
+        )
+
+        if re.search(
+            r"\b(aim|aims|goal|purpose|objective|"
+            r"designed|focuses|propose|introduce)\b",
+            lower
+        ):
+            score += 1.00
+
+        if candidate["entities"]:
+
+            if self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                score += 0.70
+
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 1.50
+
+        return score
+
+    def _extract_objective(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._objective_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            if self._is_comparison_sentence(
+                candidate["text"]
+            ):
+                continue
+
+            return candidate["text"]
+
+        return self._not_found()
+
+    # =========================================================
+    # RESULTS
+    # =========================================================
+
+    def _result_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        score += (
+            0.40 *
+            self._cue_score(
+                text,
+                self.RESULT_CUES
+            )
+        )
+
+        if candidate["entities"]:
+
+            if self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                score += 0.60
+
+        # Numeric evidence.
+        if re.search(
+            r"\b\d+(?:\.\d+)?%?\b",
+            lower
+        ):
+            score += 0.25
+
+        if re.search(
+            r"\b(found|discovered|achieved|"
+            r"outperforms|results show|"
+            r"evaluated|detected|identified|"
+            r"demonstrated)\b",
+            lower
+        ):
+            score += 0.90
+
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 1.20
+
+        return score
+
+    def _extract_result(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._result_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        selected = []
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            if self._is_comparison_sentence(
+                candidate["text"]
+            ):
+                continue
+
+            selected.append(candidate)
+
+            if len(selected) >= 2:
+                break
+
+        if selected:
+            return " ".join(
+                item["text"]
+                for item in selected
+            )
+
+        return self._not_found()
+
+    # =========================================================
+    # LIMITATIONS
+    # =========================================================
+
+    def _limitation_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        text = candidate["text"]
+        lower = text.lower()
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        score += (
+            0.45 *
+            self._cue_score(
+                text,
+                self.LIMITATION_CUES
+            )
+        )
+
+        if re.search(
+            r"\b(cannot|could not|unable|"
+            r"does not|not support|future work|"
+            r"not addressed|not covered|"
+            r"limitation|shortcoming|drawback)\b",
+            lower
+        ):
+            score += 1.00
+
+        if candidate["entities"]:
+
+            if self._contains_entity(
+                text,
+                candidate["entities"]
+            ):
+                score += 0.40
+
+        return score
+
+    def _extract_limitation(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._limitation_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        selected = []
+
+        for score, candidate in ranked:
+
+            if score <= 0:
+                continue
+
+            selected.append(candidate)
+
+            if len(selected) >= 2:
+                break
+
+        if selected:
+            return " ".join(
+                item["text"]
+                for item in selected
+            )
+
+        return self._not_found()
+
+    # =========================================================
+    # GENERAL QUESTION
+    # =========================================================
+
+    def _general_score(
+        self,
+        question: str,
+        candidate: Dict
+    ) -> float:
+
+        score = self._base_score(
+            question,
+            candidate
+        )
+
+        if self._is_comparison_sentence(
+            candidate["text"]
+        ):
+            score -= 0.50
+
+        return score
+
+    def _extract_general(
+        self,
+        question: str,
+        candidates: List[Dict]
+    ) -> str:
+
+        ranked = sorted(
+            (
+                (
+                    self._general_score(
+                        question,
+                        candidate
+                    ),
+                    candidate
+                )
+                for candidate in candidates
+            ),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        if not ranked:
+            return self._not_found()
+
+        if ranked[0][0] <= 0:
+            return self._not_found()
+
+        return ranked[0][1]["text"]
+
+    # =========================================================
+    # ANSWER VALIDATION
+    # =========================================================
+
+    def _validate_answer(
+        self,
+        question: str,
+        answer: str,
+        intent: str
+    ) -> bool:
+
+        if not answer:
+            return False
+
+        if answer == self._not_found():
+            return False
+
+        if len(answer.strip()) < 20:
+            return False
+
+        lower = answer.lower()
+
+        # Definition validation.
+        if intent == "definition":
+
+            if (
+                "not addressed by" in lower
+                or "orthogonal challenge" in lower
+                or "not supported by" in lower
+            ):
+                return False
+
+            if self._is_comparison_sentence(
+                answer
+            ):
+                return False
+
+        # Mechanism validation.
+        if intent == "mechanism":
+
+            if self._is_comparison_sentence(
+                answer
+            ):
+                return False
+
+        # Problem validation.
+        if intent == "addressed_problem":
+
+            if self._is_comparison_sentence(
+                answer
+            ):
+                return False
+
+        return True
+
+    # =========================================================
+    # NOT FOUND
+    # =========================================================
+
+    def _not_found(self) -> str:
+        return (
+            "I could not find relevant information "
+            "in the uploaded document."
+        )
+
+    # =========================================================
+    # PUBLIC API
+    # =========================================================
 
     def answer_question(
         self,
-        question,
-        search_results,
-    ):
-        logger.info(
-            "Answering question: %s",
-            question,
-        )
+        question: str,
+        search_results: List[Dict]
+    ) -> str:
 
         if not question or not question.strip():
-            return (
-                "Please enter a question about the document."
-            )
+            return self._not_found()
 
         if not search_results:
-            return (
-                "I could not find relevant information "
-                "in the uploaded document."
-            )
+            return self._not_found()
 
-        intent = self._detect_intent(question)
-
-        logger.info(
-            "Detected QA intent: %s",
-            intent,
+        question = self._normalize_text(
+            question
         )
 
-        if intent == "objective":
-            answer = self._extract_objective_block(
-                search_results
+        intent = self._detect_intent(
+            question
+        )
+
+        candidates = self._collect_candidates(
+            question,
+            search_results
+        )
+
+        candidates = self._deduplicate(
+            candidates
+        )
+
+        if not candidates:
+            return self._not_found()
+
+        # -----------------------------------------------------
+        # Intent-specific extraction
+        # -----------------------------------------------------
+
+        if intent == "addressed_problem":
+
+            answer = self._extract_addressed_problem(
+                question,
+                candidates
             )
 
-            if answer:
-                return answer
+        elif intent == "definition":
 
-        if intent == "definition":
             answer = self._extract_definition(
                 question,
-                search_results,
+                candidates
             )
 
-            if answer:
-                return answer
+        elif intent == "mechanism":
 
-        if intent == "mechanism":
             answer = self._extract_mechanism(
                 question,
-                search_results,
+                candidates
             )
 
-            if answer:
-                return answer
+        elif intent == "objective":
 
-        if intent == "result":
+            answer = self._extract_objective(
+                question,
+                candidates
+            )
+
+        elif intent == "result":
+
             answer = self._extract_result(
                 question,
-                search_results,
+                candidates
             )
 
-            if answer:
-                return answer
+        elif intent == "limitation":
 
-        if intent == "limitation":
             answer = self._extract_limitation(
                 question,
-                search_results,
+                candidates
             )
 
-            if answer:
-                return answer
+        else:
 
-        # General fallback.
-        answer = self._extract_general(
+            answer = self._extract_general(
+                question,
+                candidates
+            )
+
+        # -----------------------------------------------------
+        # Final validation
+        # -----------------------------------------------------
+
+        if not self._validate_answer(
             question,
-            search_results,
-        )
+            answer,
+            intent
+        ):
+            return self._not_found()
 
-        if answer:
-            return answer
-
-        # Final evidence fallback.
-        best_result = search_results[0]
-
-        fallback = self._clean_answer_text(
-            best_result.get("text", "")
-        )
-
-        if fallback:
-            sentences = self._split_sentences(
-                fallback
-            )
-
-            if sentences:
-                return sentences[0]
-
-            return fallback[:800]
-
-        return (
-            "I could not find a clear answer "
-            "in the uploaded document."
-        )
+        return answer
