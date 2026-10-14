@@ -1,6 +1,6 @@
 # 📄 AI-Powered Document Intelligence
 
-An AI-powered document intelligence system for processing PDF and DOCX documents, extracting and cleaning text, classifying documents, generating extractive summaries, performing semantic search, and answering questions using retrieved document context.
+An AI-powered document intelligence system for processing PDF and DOCX documents, extracting and cleaning text, handling scanned PDFs with OCR, classifying documents, generating extractive summaries, performing semantic search, and answering questions using retrieved document context.
 
 ---
 
@@ -8,8 +8,8 @@ An AI-powered document intelligence system for processing PDF and DOCX documents
 
 - 📕 PDF document support
 - 📘 DOCX document support
-- 🔍 OCR support for scanned PDF documents
-- 🧹 Automated text cleaning
+- 🔍 OCR fallback for scanned PDF pages
+- 🧹 Automated text cleaning and preprocessing
 - ✂️ Overlapping text chunking
 - 🧠 Sentence-transformer embeddings
 - 🔎 Semantic document search
@@ -22,45 +22,44 @@ An AI-powered document intelligence system for processing PDF and DOCX documents
 - 🌐 Interactive Streamlit web interface
 - 📝 Application logging and error handling
 - 🧪 Automated pytest test suite
-- 📂 Multiple PDF/DOCX upload support
 
 ---
 
 ## 🏗️ System Architecture
 
-```text
-                    Document Upload
-                           │
-                           ▼
-                PDF / DOCX Extraction
-                           │
-                           ▼
-                  OCR for Scanned PDFs
-                           │
-                           ▼
-                     Text Cleaning
-                           │
-                           ▼
-                Document Classification
-                           │
-                           ▼
-                    Text Chunking
-                           │
-                           ▼
-                 Sentence Embeddings
-                           │
-                           ▼
-                  FAISS Vector Index
-                           │
-                           ▼
-                   Semantic Search
-                           │
-                           ▼
-              Source-Grounded Q&A
-                           │
-                           ▼
-              Extractive Summarization
-```
+    Document Upload
+           │
+           ▼
+    PDF / DOCX Extraction
+           │
+           ▼
+    OCR Fallback for Scanned PDF Pages
+           │
+           ▼
+    Text Cleaning
+           │
+           ▼
+    Document Classification
+           │
+           ▼
+    Text Chunking
+           │
+           ▼
+    Sentence Embeddings
+           │
+           ▼
+    FAISS Vector Index
+           │
+           ▼
+    Semantic Search
+           │
+      ┌────┴────┐
+      ▼         ▼
+    Question   Summarization
+    Answering
+      │
+      ▼
+    Relevant Sources
 
 ---
 
@@ -77,7 +76,7 @@ An AI-powered document intelligence system for processing PDF and DOCX documents
 | pdf2image | Convert PDF pages to images for OCR |
 | Poppler | PDF rendering for OCR |
 | Pillow | Image processing |
-| Sentence Transformers | Text embedding generation |
+| Sentence Transformers | Semantic embedding generation |
 | FAISS | Vector similarity search |
 | Hugging Face Transformers | Zero-shot document classification |
 | NumPy | Numerical processing |
@@ -87,40 +86,45 @@ An AI-powered document intelligence system for processing PDF and DOCX documents
 
 ## 📂 Project Structure
 
-```text
-AI-Document-Intelligence/
-│
-├── app/
-│   └── app.py
-│
-├── src/
-│   ├── document_processor.py
-│   ├── document_classifier.py
-│   ├── text_processor.py
-│   ├── vector_search.py
-│   ├── qa_engine.py
-│   ├── summary_engine.py
-│   ├── logger.py
-│   └── main.py
-│
-├── tests/
-│   ├── test_document_processor.py
-│   ├── test_document_classifier.py
-│   ├── test_text_processor.py
-│   ├── test_vector_search.py
-│   ├── test_qa_engine.py
-│   ├── test_summary_engine.py
-│   └── test_logger.py
-│
-├── screenshots/
-│   ├── app-overview.png
-│   └── question-answering.png
-│
-├── .gitignore
-├── LICENSE
-├── README.md
-└── requirements.txt
-```
+    AI-Document-Intelligence/
+    │
+    ├── app/
+    │   └── app.py
+    │
+    ├── data/
+    │   ├── sample.pdf
+    │   ├── ocr_test.pdf
+    │   └── uploads/
+    │
+    ├── screenshots/
+    │   ├── 02_Document_Overview.png
+    │   ├── 03_Document_Classification.png
+    │   ├── 05_Full_Application.png
+    │   └── RQ5_01_AidFuzzer_Addressed_Problem.png
+    │
+    ├── src/
+    │   ├── document_processor.py
+    │   ├── document_classifier.py
+    │   ├── text_processor.py
+    │   ├── vector_search.py
+    │   ├── qa_engine.py
+    │   ├── summary_engine.py
+    │   ├── logger.py
+    │   └── main.py
+    │
+    ├── tests/
+    │   ├── test_document_processor.py
+    │   ├── test_document_classifier.py
+    │   ├── test_text_processor.py
+    │   ├── test_vector_search.py
+    │   ├── test_qa_engine.py
+    │   ├── test_summary_engine.py
+    │   └── test_logger.py
+    │
+    ├── .gitignore
+    ├── requirements.txt
+    ├── README.md
+    └── LICENSE
 
 ---
 
@@ -128,57 +132,45 @@ AI-Document-Intelligence/
 
 ### 1. Clone the repository
 
-```bash
-git clone https://github.com/mdsakibhasan-cs/AI-Document-Intelligence.git
-cd AI-Document-Intelligence
-```
+    git clone https://github.com/mdsakibhasan-cs/AI-Document-Intelligence.git
+    cd AI-Document-Intelligence
 
 ### 2. Create a virtual environment
 
-```bash
-python -m venv .venv
-```
+    python -m venv .venv
 
 ### 3. Activate the virtual environment
 
 #### Windows PowerShell
 
-```powershell
-.venv\Scripts\activate
-```
+    .venv\Scripts\activate
 
 #### Windows Command Prompt
 
-```cmd
-.venv\Scripts\activate
-```
+    .venv\Scripts\activate
 
 ### 4. Install Python dependencies
 
-```bash
-pip install -r requirements.txt
-```
+    pip install -r requirements.txt
 
 ---
 
 ## 🔍 OCR Setup
 
-Scanned PDF OCR requires:
+Scanned PDF processing requires:
 
-- Tesseract OCR
-- Poppler
+- **Tesseract OCR**
+- **Poppler**
 
-The application uses locally installed Tesseract and Poppler binaries when a PDF page does not contain extractable text.
+The application uses:
 
-### Important
+- `pytesseract` to communicate with Tesseract
+- `pdf2image` to convert PDF pages into images
+- Poppler for PDF page rendering
 
-The Tesseract and Poppler paths are environment-specific.
+The OCR implementation automatically falls back to OCR when a PDF page does not contain an extractable text layer.
 
-When running the project on another computer, configure the corresponding paths in:
-
-```text
-src/document_processor.py
-```
+> **Note:** Tesseract and Poppler paths are environment-specific. When running the project on another computer, configure the paths in `src/document_processor.py` according to the local installation.
 
 ---
 
@@ -186,17 +178,13 @@ src/document_processor.py
 
 Start the Streamlit application with:
 
-```bash
-streamlit run app/app.py --server.fileWatcherType none
-```
+    streamlit run app/app.py --server.fileWatcherType none
 
-The application will open in your default web browser.
+The application will open in the browser.
 
-Local address:
+Default local address:
 
-```text
-http://localhost:8501
-```
+    http://localhost:8501
 
 ---
 
@@ -204,19 +192,26 @@ http://localhost:8501
 
 ### 1. Document Upload
 
-Users can upload one or more PDF or DOCX documents through the Streamlit web interface.
+Users upload PDF or DOCX documents through the Streamlit interface.
 
 ### 2. Document Text Extraction
 
-PDF documents are processed using PyMuPDF, while DOCX documents are processed using python-docx.
+PDF documents are processed using **PyMuPDF**, while DOCX documents are processed using **python-docx**.
 
-### 3. OCR for Scanned PDFs
+The system extracts available text for downstream processing.
 
-When a PDF page does not contain extractable text, the system automatically attempts OCR.
+### 3. OCR Fallback
 
-The page is converted into an image using `pdf2image` and Poppler, and Tesseract OCR extracts the text.
+Some PDF documents contain scanned pages without an embedded text layer.
 
-This allows the system to process scanned and image-based PDF pages.
+For such pages:
+
+1. The PDF page is converted into an image.
+2. Poppler and `pdf2image` are used for page rendering.
+3. Tesseract OCR extracts text from the generated image.
+4. The extracted OCR text is added to the document content.
+
+This allows the system to process both text-based and scanned PDF documents.
 
 ### 4. Text Cleaning
 
@@ -228,21 +223,15 @@ The cleaning stage handles:
 - Broken line structures
 - Hyphenated line breaks
 - PDF extraction artifacts
-- Unwanted numeric-only lines
+- Numeric-only lines
 - Figure and table labels
-- Common document formatting noise
+- Common formatting noise
 
 ### 5. Document Classification
 
-The system includes a transformer-based zero-shot document classification module.
+The system uses transformer-based zero-shot classification.
 
-The classifier uses:
-
-```text
-facebook/bart-large-mnli
-```
-
-Documents can be classified into categories including:
+The current predefined categories include:
 
 - Research Paper
 - Business Document
@@ -254,114 +243,125 @@ Documents can be classified into categories including:
 - Resume / CV
 - Other
 
+The classification module uses:
+
+    facebook/bart-large-mnli
+
 ### 6. Text Chunking
 
-After cleaning, each document is divided into smaller overlapping text chunks.
+The cleaned document is divided into overlapping chunks.
 
-This allows the retrieval system to work with manageable sections of document content.
+Overlapping chunks help preserve contextual information between neighboring sections while making retrieval more manageable.
 
 ### 7. Sentence Embeddings
 
-Each text chunk is converted into a numerical vector representation using:
+Each chunk is converted into a numerical vector representation using:
 
-```text
-sentence-transformers/all-MiniLM-L6-v2
-```
+    sentence-transformers/all-MiniLM-L6-v2
 
-These embeddings represent the semantic meaning of the document content.
+These embeddings represent the semantic meaning of document content.
 
-### 8. Vector Indexing
+### 8. FAISS Vector Index
 
 The generated embeddings are stored in a FAISS vector index.
 
-The project uses FAISS inner-product similarity with normalized embeddings for vector retrieval.
+FAISS enables efficient similarity-based retrieval between user queries and document chunks.
 
 ### 9. Semantic Search
 
-When a user enters a question, the question is converted into an embedding and compared with the indexed document chunks.
+When a user submits a question:
 
-The retrieval system combines:
+1. The query is converted into an embedding.
+2. FAISS retrieves semantically similar document chunks.
+3. Keyword overlap is also considered.
+4. The retrieved candidates are ranked using the combined relevance score.
 
-- 70% semantic similarity
-- 30% keyword overlap
+The current retrieval strategy combines:
 
-to rank relevant document sections.
+- **70% semantic similarity**
+- **30% keyword overlap**
 
 ### 10. Source-Grounded Question Answering
 
 The retrieved document sections are passed to the question-answering engine.
 
-The current system generates answers from the retrieved document context rather than relying on an external generative LLM.
+The system generates an answer from the retrieved document context rather than relying on an external generative LLM.
 
-Relevant source sections and similarity scores are also displayed in the interface.
+The application also displays:
 
-### 11. Extractive Document Summarization
+- Relevant document sections
+- Source document names
+- Similarity scores
 
-The summarization module generates a concise extractive summary from the processed document.
+This makes the answer process more transparent and traceable to the uploaded document.
 
-It identifies important sentences using signals related to:
+### 11. Extractive Summarization
 
-- Problems and motivation
+The summarization module creates a concise extractive summary from the processed document.
+
+It prioritizes information related to:
+
 - Main contributions
+- Problems and motivation
 - Methods and mechanisms
 - Evaluation and results
 
-The module also removes duplicate or low-quality sentences before producing the final summary.
+Low-quality and duplicate sentences are filtered before producing the final summary.
 
 ---
 
 ## 🖥️ Application Interface
 
-The application provides an interactive web interface built with Streamlit.
+The application provides an interactive Streamlit-based interface where users can:
 
-Users can:
-
-- 📂 Upload one or more PDF/DOCX documents
+- 📂 Upload PDF and DOCX documents
 - 📊 View document processing statistics
 - 🏷️ View document classification results
+- 📋 Inspect classification predictions
 - 📝 Read generated document summaries
 - 🔎 Ask natural-language questions
 - 🤖 Receive source-grounded answers
-- 📚 View relevant document sources
-- 📈 Inspect similarity scores
+- 📚 Inspect relevant document sources
+- 📈 View similarity scores
+
+### 📸 Full Application
+
+![Full Application](screenshots/05_Full_Application.png)
 
 ### 📊 Document Overview
 
-The application provides an interface for uploading and analyzing documents, displaying processing information, classification results, and generated summaries.
+![Document Overview](screenshots/02_Document_Overview.png)
 
-![Application Overview](screenshots/app-overview.png)
+### 🏷️ Document Classification
 
-### 🔎 Question Answering
+![Document Classification](screenshots/03_Document_Classification.png)
 
-Users can ask natural-language questions about the uploaded documents.
+### 🤖 Question Answering
 
-The system performs semantic retrieval using FAISS and returns a context-based answer together with relevant document sections and similarity scores.
-
-![Question Answering](screenshots/question-answering.png)
+![Question Answering](screenshots/RQ5_01_AidFuzzer_Addressed_Problem.png)
 
 ---
 
 ## 🔬 Example Query
 
-After uploading a document, users can ask questions related to its content.
+After uploading a research paper, users can ask questions about its content.
 
-Example:
+**Example question:**
 
-> How does AIM handle interrupts?
+> What problem does AidFuzzer address?
 
-The system performs semantic search across the uploaded document content, retrieves relevant sections, and generates a source-grounded answer.
+The system retrieves relevant sections from the uploaded document and produces a source-grounded answer.
 
-The retrieved sources and their similarity scores are also displayed.
+The interface also displays the relevant source sections and their similarity scores.
 
 ---
 
 ## 🧪 Testing
 
-The project includes an automated pytest test suite covering the major components of the system.
+The project includes an automated `pytest` test suite covering the major components of the system.
 
-The test suite covers:
+Test coverage includes:
 
-- Document processing
 - PDF extraction
 - OCR-aware document processing
 - DOCX extraction
@@ -373,11 +373,9 @@ The test suite covers:
 - Document summarization
 - Logging
 
-### Verified Test Result
+The current verified test suite:
 
-```text
-20 passed
-```
+    20 passed
 
 ---
 
@@ -386,15 +384,15 @@ The test suite covers:
 The main goals of this project are to:
 
 - Build a practical document intelligence system for PDF and DOCX files
-- Support text-based and scanned PDF documents
+- Support both text-based and scanned PDF documents
 - Automatically classify uploaded documents
 - Generate concise extractive summaries
 - Enable semantic search over unstructured document content
-- Retrieve relevant information based on query meaning
+- Retrieve information based on semantic meaning
 - Provide source-grounded question answering
 - Demonstrate sentence embeddings and vector similarity search
 - Provide an interactive web interface
-- Maintain a modular architecture that can be extended with additional AI capabilities
+- Maintain a modular and extensible architecture
 
 ---
 
@@ -403,12 +401,12 @@ The main goals of this project are to:
 Potential future improvements include:
 
 - 🤖 Integration of a generative LLM for more advanced question answering
-- 💬 Conversational multi-turn document chat
-- 📚 Advanced multi-document retrieval and cross-document analysis
+- 💬 Multi-turn conversational document chat
+- 📚 Multi-document semantic search
 - 🌐 Support for additional document formats
-- ⚡ Advanced retrieval and reranking strategies
+- ⚡ Advanced retrieval and reranking
 - 🔐 User authentication and document access control
-- ☁️ Cloud-based document storage and deployment
+- ☁️ Cloud-based storage and deployment
 - 📊 Advanced document analytics and visualization
 - 🌍 Improved multilingual OCR configuration
 - 🚀 Production-oriented deployment and scalability improvements
@@ -417,16 +415,15 @@ Potential future improvements include:
 
 ## 📌 Current Limitations
 
-The current version has the following limitations:
+The current version has several limitations:
 
-- OCR depends on locally installed Tesseract OCR and Poppler binaries.
+- OCR depends on locally installed Tesseract and Poppler binaries.
 - OCR accuracy depends on the quality, resolution, and layout of scanned documents.
-- The current question-answering module is source-grounded and does not use a generative LLM.
-- Answer quality depends on the relevance and quality of retrieved document chunks.
-- Document classification uses a predefined set of zero-shot categories.
-- Authentication and access control are not currently included.
+- Question-answering quality depends on the relevance and quality of retrieved document chunks.
+- The current QA system is source-grounded and does not use a generative LLM.
+- Document classification relies on predefined zero-shot categories.
+- Authentication and document access control are not currently implemented.
 - The application is primarily designed as a local prototype and has not yet been deployed as a production service.
-- Large documents and multiple uploaded documents may require more computational resources for embedding and indexing.
 
 ---
 
@@ -440,8 +437,8 @@ Nantong University, China
 ### Areas of Interest
 
 - Artificial Intelligence
-- Data Science
 - Machine Learning
+- Data Science
 - Natural Language Processing
 - Software Engineering
 - Cyber Security
