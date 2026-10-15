@@ -1862,7 +1862,7 @@ class QAEngine:
         question: str,
         candidates: List[Dict]
     ) -> str:
-        """Extract the paper's stated purpose while avoiding discussion prompts."""
+        """Extract the paper-level objective without accepting arbitrary method sentences."""
 
         excluded_patterns = (
             r"\blessons?\s+learned\b",
@@ -1870,6 +1870,8 @@ class QAEngine:
             r"\bconclusion\b",
             r"\bfuture\s+(work|research)\b",
             r"\blimitations?\b",
+            r"\bthe\s+following\s+(heuristics|rules|guidelines|steps)\b",
+            r"\bfollowing\s+(heuristics|rules|guidelines|steps)\b",
         )
 
         def is_excluded_context(text: str) -> bool:
@@ -1879,114 +1881,193 @@ class QAEngine:
                 for pattern in excluded_patterns
             )
 
-        explicit_patterns = (
-            # Paper-level purpose/objective statements
-            r"\bthe\s+(main\s+|primary\s+)?purpose\s+of\s+this\s+(paper|work|study)\b",
-            r"\bthe\s+(main\s+|primary\s+)?objective\s+of\s+this\s+(paper|work|study)\b",
-            r"\bthe\s+(main\s+|primary\s+)?goal\s+of\s+this\s+(paper|work|study)\b",
+        def is_component_objective(text: str) -> bool:
+            lower = text.lower()
 
-            # Direct paper-level author statements
-            r"\bthis\s+(paper|work|study)\s+aims?\s+to\b",
-            r"\bthis\s+(paper|work|study)\s+seeks?\s+to\b",
-            r"\bwe\s+(aim|seek)\s+to\b",
-            r"\bwe\s+(present|propose|introduce|develop)\b",
-        )
+            return bool(
+                re.search(
+                    r"\b(the\s+(main\s+|primary\s+)?"
+                    r"(goal|objective|purpose)\s+of\s+"
+                    r"(the\s+)?"
+                    r"[a-z0-9_-]+\s+"
+                    r"(model|modeling|engine|module|component|"
+                    r"subsystem|manager|database|classifier|"
+                    r"retriever|generator|pipeline))\b",
+                    lower
+                )
+            )
 
-        strong_patterns = (
-            r"\b(this\s+(paper|work|study)\s+"
-            r"(aims?|seeks?|focuses?|investigates?|examines?|"
-            r"proposes?|presents?|introduces?|develops?|addresses?))\b",
-            r"\b(our|this\s+study's)\s+(goal|objective|purpose)\b",
-            r"\b(designed|developed|intended)\s+to\b",
-        )
+        def is_heuristic_or_method_proposal(text: str) -> bool:
+            lower = text.lower()
 
+            return bool(
+                re.search(
+                    r"\bwe\s+propose\s+the\s+following\b",
+                    lower
+                )
+                or re.search(
+                    r"\bwe\s+propose\s+(a|an|the)\s+"
+                    r"(heuristic|heuristics|rule|rules|algorithm|"
+                    r"strategy|method|procedure|approach)\b",
+                    lower
+                )
+                or re.search(
+                    r"\bwe\s+(develop|design|implement)\s+"
+                    r"(a|an|the)\s+"
+                    r"(heuristic|algorithm|module|component|"
+                    r"engine|model|database|system)\b",
+                    lower
+                )
+            )
+
+        def valid(sentence: str) -> bool:
+            sentence = sentence.strip()
+
+            if not sentence:
+                return False
+
+            if len(sentence.split()) < 6:
+                return False
+
+            if is_excluded_context(sentence):
+                return False
+
+            if is_component_objective(sentence):
+                return False
+
+            if is_heuristic_or_method_proposal(sentence):
+                return False
+
+            return True
+
+        # -----------------------------------------------------
+        # Rank candidates, but never allow retrieval score alone
+        # to override a clear paper-level objective statement.
+        # -----------------------------------------------------
         ranked = sorted(
             candidates,
             key=lambda item: self._objective_score(question, item),
             reverse=True
         )
 
-        # Pass 1: explicit purpose/objective statements.
+        # -----------------------------------------------------
+        # Pass 1 — explicit paper-level purpose/objective
+        # -----------------------------------------------------
+        explicit_patterns = (
+            r"\bthe\s+(main\s+|primary\s+)?purpose\s+of\s+this\s+"
+            r"(paper|work|study)\b",
+
+            r"\bthe\s+(main\s+|primary\s+)?objective\s+of\s+this\s+"
+            r"(paper|work|study)\b",
+
+            r"\bthe\s+(main\s+|primary\s+)?goal\s+of\s+this\s+"
+            r"(paper|work|study)\b",
+
+            r"\bthis\s+(paper|work|study)\s+aims?\s+to\b",
+
+            r"\bthis\s+(paper|work|study)\s+seeks?\s+to\b",
+        )
+
         for pattern in explicit_patterns:
             for candidate in ranked:
                 text = candidate.get("text", "").strip()
-                if not text or is_excluded_context(text):
+
+                if not text:
                     continue
-                sentences = self._split_sentences(text) or [text]
-                for sentence in sentences:
+
+                for sentence in self._split_sentences(text) or [text]:
                     if (
-                        not is_excluded_context(sentence)
+                        valid(sentence)
                         and re.search(pattern, sentence, re.IGNORECASE)
                     ):
                         return sentence.strip()
 
-        # Pass 2: strong paper/work/study objective statements.
+        # -----------------------------------------------------
+        # Pass 2 — strong author statements.
+        #
+        # "we present X to tackle Y" is an objective.
+        # "we propose the following heuristics" is NOT.
+        # -----------------------------------------------------
         for candidate in ranked:
             text = candidate.get("text", "").strip()
-            if not text or is_excluded_context(text):
-                continue
-            sentences = self._split_sentences(text) or [text]
-            for sentence in sentences:
-                if (
-                    not is_excluded_context(sentence)
-                    and any(
-                        re.search(pattern, sentence, re.IGNORECASE)
-                        for pattern in strong_patterns
-                    )
-                ):
-                    return sentence.strip()
 
-        # Pass 3: statements describing what the authors aim or seek to do.
-        for candidate in ranked:
-            text = candidate.get("text", "").strip()
-            if not text or is_excluded_context(text):
+            if not text:
                 continue
-            sentences = self._split_sentences(text) or [text]
-            for sentence in sentences:
+
+            for sentence in self._split_sentences(text) or [text]:
                 lower = sentence.lower()
+
+                if not valid(sentence):
+                    continue
+
+                paper_intro = bool(
+                    re.search(
+                        r"\b(in\s+this\s+(paper|work|study)|"
+                        r"this\s+(paper|work|study))\b",
+                        lower
+                    )
+                )
+
+                author_action = bool(
+                    re.search(
+                        r"\bwe\s+(present|introduce|develop|"
+                        r"propose|design|investigate|examine|"
+                        r"address|tackle|solve|study)\b",
+                        lower
+                    )
+                )
+
+                objective_purpose = bool(
+                    re.search(
+                        r"\b(to\s+(tackle|address|solve|mitigate|"
+                        r"overcome|improve|enable|support|"
+                        r"investigate|examine|detect|identify))\b",
+                        lower
+                    )
+                )
+
                 if (
-                    not is_excluded_context(sentence)
-                    and re.search(
-                        r"\b(we|this paper|this work|this study)\b",
-                        lower
-                    )
-                    and re.search(
-                        r"\b(aim|aims|seek|seeks|propose|proposes|"
-                        r"present|presents|introduce|introduces|"
-                        r"develop|develops|investigate|investigates|"
-                        r"examine|examines|focus|focuses|address|addresses)\b",
-                        lower
-                    )
+                    paper_intro
+                    and author_action
+                    and objective_purpose
                 ):
                     return sentence.strip()
 
-        # Pass 4: best remaining sentence, excluding unsuitable contexts.
-        fallback = []
+        # -----------------------------------------------------
+        # Pass 3 — "we aim/seek to ..."
+        # -----------------------------------------------------
         for candidate in ranked:
             text = candidate.get("text", "").strip()
-            if not text or is_excluded_context(text):
+
+            if not text:
                 continue
-            sentences = self._split_sentences(text) or [text]
-            for sentence in sentences:
-                if not is_excluded_context(sentence) and len(sentence.split()) >= 6:
-                    fallback.append({
-                        "text": sentence.strip(),
-                        "retrieval_score": candidate.get("retrieval_score", 0.0),
-                    })
 
-        if fallback:
-            fallback.sort(
-                key=lambda item: self._objective_score(question, item),
-                reverse=True
-            )
-            return fallback[0]["text"]
+            for sentence in self._split_sentences(text) or [text]:
+                lower = sentence.lower()
 
+                if not valid(sentence):
+                    continue
+
+                if re.search(
+                    r"\bwe\s+(aim|seek)\s+to\b",
+                    lower
+                ):
+                    return sentence.strip()
+
+                if re.search(
+                    r"\bthis\s+(paper|work|study)\s+"
+                    r"(focuses?|investigates?|examines?|addresses?)\b",
+                    lower
+                ):
+                    return sentence.strip()
+
+        # -----------------------------------------------------
+        # IMPORTANT:
+        # Do NOT return an arbitrary fallback sentence for an
+        # objective question. A wrong objective is worse than
+        # reporting that the objective was not retrieved.
+        # -----------------------------------------------------
         return self._not_found()
-
-
-    # =========================================================
-    # RESULTS
-    # =========================================================
 
     def _result_score(
         self,
