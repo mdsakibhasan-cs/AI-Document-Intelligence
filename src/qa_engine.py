@@ -1659,8 +1659,9 @@ class QAEngine:
 
         return self._not_found()
 
+
     # =========================================================
-    # OBJECTIVE
+    # OBJECTIVE / PURPOSE
     # =========================================================
 
     def _objective_score(
@@ -1672,75 +1673,287 @@ class QAEngine:
         text = candidate["text"]
         lower = text.lower()
 
-        score = self._base_score(
+        score = 0.0
+
+        # -----------------------------------------------------
+        # Retrieval relevance
+        # -----------------------------------------------------
+        score += 0.15 * candidate.get(
+            "retrieval_score",
+            0.0
+        )
+
+        # -----------------------------------------------------
+        # Question/topic overlap
+        # -----------------------------------------------------
+        score += 0.20 * self._overlap_score(
             question,
+            text
+        )
+
+        score += 0.15 * self._topic_overlap_score(
             candidate
         )
 
-        score += (
-            0.40 *
-            self._cue_score(
-                text,
-                self.OBJECTIVE_CUES
-            )
+        # -----------------------------------------------------
+        # Strong objective / purpose language
+        # -----------------------------------------------------
+        strong_objective_patterns = (
+            "the purpose of this paper is",
+            "the purpose of this work is",
+            "the purpose of this study is",
+            "the purpose of this document is",
+
+            "the main purpose",
+            "the primary purpose",
+
+            "the objective of this paper is",
+            "the objective of this work is",
+            "the objective of this study is",
+
+            "the main objective",
+            "the primary objective",
+
+            "the goal of this paper is",
+            "the goal of this work is",
+            "the goal of this study is",
+
+            "our goal is",
+            "our objective is",
+            "our purpose is",
+
+            "this paper aims to",
+            "this work aims to",
+            "this study aims to",
+
+            "we aim to",
+            "we seek to",
+
+            "this paper focuses on",
+            "this work focuses on",
+            "this study focuses on",
         )
 
+        for pattern in strong_objective_patterns:
+            if pattern in lower:
+                score += 4.0
+
+        # -----------------------------------------------------
+        # Common objective structures
+        # -----------------------------------------------------
         if re.search(
-            r"\b(aim|aims|goal|purpose|objective|"
-            r"designed|focuses|propose|introduce)\b",
+            r"\b(this\s+(paper|work|study)\s+"
+            r"(aims?|seeks?|focuses?|"
+            r"investigates?|examines?|"
+            r"presents?|proposes?|introduces?|"
+            r"develops?|addresses?))\b",
             lower
         ):
-            score += 1.00
+            score += 3.0
 
-        if candidate["entities"]:
-
-            if self._contains_entity(
-                text,
-                candidate["entities"]
-            ):
-                score += 0.70
-
-        if self._is_comparison_sentence(
-            text
+        if re.search(
+            r"\b(we\s+"
+            r"(aim|seek|propose|present|introduce|"
+            r"develop|design|investigate|examine))\b",
+            lower
         ):
-            score -= 1.50
+            score += 2.5
+
+        if re.search(
+            r"\b(designed\s+to|"
+            r"developed\s+to|"
+            r"intended\s+to|"
+            r"aimed\s+at|"
+            r"focuses?\s+on)\b",
+            lower
+        ):
+            score += 2.0
+
+        # -----------------------------------------------------
+        # Abstract/introduction objective indicators
+        # -----------------------------------------------------
+        if re.search(
+            r"\b(in\s+this\s+(paper|work|study)|"
+            r"we\s+present|"
+            r"we\s+introduce|"
+            r"we\s+propose)\b",
+            lower
+        ):
+            score += 0.8
+
+        # -----------------------------------------------------
+        # Penalize sentences that are clearly NOT objectives
+        # -----------------------------------------------------
+
+        # Results / findings
+        if re.search(
+            r"\b(results?|findings?|"
+            r"found|discovered|"
+            r"evaluated|evaluation|"
+            r"experiments?|"
+            r"outperforms?|"
+            r"achieved|demonstrated)\b",
+            lower
+        ):
+            score -= 2.0
+
+        # Lessons learned / discussion / conclusion material
+        if re.search(
+            r"\b(lessons?\s+learned|"
+            r"discussion|"
+            r"conclusion|"
+            r"future\s+work|"
+            r"future\s+research)\b",
+            lower
+        ):
+            score -= 3.0
+
+        # Pure methodological descriptions
+        if re.search(
+            r"\b(we\s+implemented|"
+            r"we\s+evaluated|"
+            r"we\s+tested|"
+            r"we\s+measured|"
+            r"we\s+collected)\b",
+            lower
+        ):
+            score -= 1.0
+
+        # Comparisons
+        if self._is_comparison_sentence(text):
+            score -= 2.5
+
+        # Limitations
+        if self._is_limitation_sentence(text):
+            score -= 2.0
 
         return score
+
+
+
 
     def _extract_objective(
         self,
         question: str,
         candidates: List[Dict]
     ) -> str:
+        """Extract the paper's stated purpose while avoiding discussion prompts."""
+
+        excluded_patterns = (
+            r"\blessons?\s+learned\b",
+            r"\bdiscussion\b",
+            r"\bconclusion\b",
+            r"\bfuture\s+(work|research)\b",
+            r"\blimitations?\b",
+        )
+
+        def is_excluded_context(text: str) -> bool:
+            lower = text.lower()
+            return any(
+                re.search(pattern, lower)
+                for pattern in excluded_patterns
+            )
+
+        explicit_patterns = (
+            r"\bthe\s+(main\s+|primary\s+)?purpose\b",
+            r"\bthe\s+(main\s+|primary\s+)?objective\b",
+            r"\bthe\s+(main\s+|primary\s+)?goal\b",
+            r"\bthis\s+(paper|work|study)\s+aims?\s+to\b",
+            r"\bwe\s+(aim|seek)\s+to\b",
+            r"\bthe\s+purpose\s+of\s+this\s+(paper|work|study)\b",
+        )
+
+        strong_patterns = (
+            r"\b(this\s+(paper|work|study)\s+"
+            r"(aims?|seeks?|focuses?|investigates?|examines?|"
+            r"proposes?|presents?|introduces?|develops?|addresses?))\b",
+            r"\b(our|this\s+study's)\s+(goal|objective|purpose)\b",
+            r"\b(designed|developed|intended)\s+to\b",
+        )
 
         ranked = sorted(
-            (
-                (
-                    self._objective_score(
-                        question,
-                        candidate
-                    ),
-                    candidate
-                )
-                for candidate in candidates
-            ),
-            key=lambda item: item[0],
+            candidates,
+            key=lambda item: self._objective_score(question, item),
             reverse=True
         )
 
-        for score, candidate in ranked:
+        # Pass 1: explicit purpose/objective statements.
+        for pattern in explicit_patterns:
+            for candidate in ranked:
+                text = candidate.get("text", "").strip()
+                if not text or is_excluded_context(text):
+                    continue
+                sentences = self._split_sentences(text) or [text]
+                for sentence in sentences:
+                    if (
+                        not is_excluded_context(sentence)
+                        and re.search(pattern, sentence, re.IGNORECASE)
+                    ):
+                        return sentence.strip()
 
-            if score <= 0:
+        # Pass 2: strong paper/work/study objective statements.
+        for candidate in ranked:
+            text = candidate.get("text", "").strip()
+            if not text or is_excluded_context(text):
                 continue
+            sentences = self._split_sentences(text) or [text]
+            for sentence in sentences:
+                if (
+                    not is_excluded_context(sentence)
+                    and any(
+                        re.search(pattern, sentence, re.IGNORECASE)
+                        for pattern in strong_patterns
+                    )
+                ):
+                    return sentence.strip()
 
-            if self._is_comparison_sentence(
-                candidate["text"]
-            ):
+        # Pass 3: statements describing what the authors aim or seek to do.
+        for candidate in ranked:
+            text = candidate.get("text", "").strip()
+            if not text or is_excluded_context(text):
                 continue
+            sentences = self._split_sentences(text) or [text]
+            for sentence in sentences:
+                lower = sentence.lower()
+                if (
+                    not is_excluded_context(sentence)
+                    and re.search(
+                        r"\b(we|this paper|this work|this study)\b",
+                        lower
+                    )
+                    and re.search(
+                        r"\b(aim|aims|seek|seeks|propose|proposes|"
+                        r"present|presents|introduce|introduces|"
+                        r"develop|develops|investigate|investigates|"
+                        r"examine|examines|focus|focuses|address|addresses)\b",
+                        lower
+                    )
+                ):
+                    return sentence.strip()
 
-            return candidate["text"]
+        # Pass 4: best remaining sentence, excluding unsuitable contexts.
+        fallback = []
+        for candidate in ranked:
+            text = candidate.get("text", "").strip()
+            if not text or is_excluded_context(text):
+                continue
+            sentences = self._split_sentences(text) or [text]
+            for sentence in sentences:
+                if not is_excluded_context(sentence) and len(sentence.split()) >= 6:
+                    fallback.append({
+                        "text": sentence.strip(),
+                        "retrieval_score": candidate.get("retrieval_score", 0.0),
+                    })
+
+        if fallback:
+            fallback.sort(
+                key=lambda item: self._objective_score(question, item),
+                reverse=True
+            )
+            return fallback[0]["text"]
 
         return self._not_found()
+
 
     # =========================================================
     # RESULTS

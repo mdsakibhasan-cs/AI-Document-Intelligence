@@ -69,3 +69,32 @@ def test_qa_engine_uses_relevant_content():
 
     assert "interrupt" in answer.lower()
     assert "AIM" in answer or "aim" in answer.lower()
+
+def test_objective_extraction_avoids_lessons_learned():
+    search_results = [
+        {
+            "score": 0.95,
+            "text": (
+                "Lessons Learned. Recall the three questions "
+                "we aim to answer in this paper: 1."
+            ),
+        },
+        {
+            "score": 0.90,
+            "text": (
+                "The main objective of this paper is to introduce "
+                "a method for generating tests for embedded C "
+                "programs with hardware-aware constraints."
+            ),
+        },
+    ]
+
+    qa_engine = QAEngine()
+
+    answer = qa_engine.answer_question(
+        "What is the main goal of this paper?",
+        search_results
+    )
+
+    assert "lessons learned" not in answer.lower()
+    assert "main objective" in answer.lower() or "generating tests" in answer.lower()
