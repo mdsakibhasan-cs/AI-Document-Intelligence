@@ -1770,16 +1770,41 @@ class QAEngine:
             score += 2.0
 
         # -----------------------------------------------------
-        # Abstract/introduction objective indicators
+        # Paper-level objective indicators
         # -----------------------------------------------------
         if re.search(
             r"\b(in\s+this\s+(paper|work|study)|"
+            r"this\s+(paper|work|study)|"
             r"we\s+present|"
             r"we\s+introduce|"
-            r"we\s+propose)\b",
+            r"we\s+propose|"
+            r"we\s+develop)\b",
             lower
         ):
-            score += 0.8
+            score += 3.0
+
+        # Statements that explicitly address a paper-level problem
+        if re.search(
+            r"\b(to\s+(tackle|address|solve|mitigate|"
+            r"overcome)\s+(the\s+)?"
+            r"(problem|challenge|issue))\b",
+            lower
+        ):
+            score += 2.5
+
+        # -----------------------------------------------------
+        # Penalize component/module-level objectives
+        # -----------------------------------------------------
+        if re.search(
+            r"\b(the\s+(main\s+|primary\s+)?"
+            r"(goal|objective|purpose)\s+of\s+"
+            r"(the\s+)?"
+            r"[a-z0-9_-]+\s+"
+            r"(model|modeling|engine|module|component|"
+            r"system|subsystem|manager|database))\b",
+            lower
+        ):
+            score -= 5.0
 
         # -----------------------------------------------------
         # Penalize sentences that are clearly NOT objectives
@@ -1855,12 +1880,16 @@ class QAEngine:
             )
 
         explicit_patterns = (
-            r"\bthe\s+(main\s+|primary\s+)?purpose\b",
-            r"\bthe\s+(main\s+|primary\s+)?objective\b",
-            r"\bthe\s+(main\s+|primary\s+)?goal\b",
+            # Paper-level purpose/objective statements
+            r"\bthe\s+(main\s+|primary\s+)?purpose\s+of\s+this\s+(paper|work|study)\b",
+            r"\bthe\s+(main\s+|primary\s+)?objective\s+of\s+this\s+(paper|work|study)\b",
+            r"\bthe\s+(main\s+|primary\s+)?goal\s+of\s+this\s+(paper|work|study)\b",
+
+            # Direct paper-level author statements
             r"\bthis\s+(paper|work|study)\s+aims?\s+to\b",
+            r"\bthis\s+(paper|work|study)\s+seeks?\s+to\b",
             r"\bwe\s+(aim|seek)\s+to\b",
-            r"\bthe\s+purpose\s+of\s+this\s+(paper|work|study)\b",
+            r"\bwe\s+(present|propose|introduce|develop)\b",
         )
 
         strong_patterns = (

@@ -98,3 +98,33 @@ def test_objective_extraction_avoids_lessons_learned():
 
     assert "lessons learned" not in answer.lower()
     assert "main objective" in answer.lower() or "generating tests" in answer.lower()
+
+def test_objective_extraction_prefers_paper_goal_over_component_goal():
+    search_results = [
+        {
+            "score": 0.95,
+            "text": (
+                "The main goal of the IRQ modeling is to determine "
+                "the type and status of an IRQ."
+            ),
+        },
+        {
+            "score": 0.90,
+            "text": (
+                "In this paper, we present AidFuzzer, an adaptive "
+                "interrupt-driven firmware fuzzing method, to tackle "
+                "the interrupt triggering problem."
+            ),
+        },
+    ]
+
+    qa_engine = QAEngine()
+
+    answer = qa_engine.answer_question(
+        "What is the main goal of this paper?",
+        search_results
+    )
+
+    assert "AidFuzzer" in answer
+    assert "interrupt triggering problem" in answer
+    assert "IRQ modeling" not in answer
