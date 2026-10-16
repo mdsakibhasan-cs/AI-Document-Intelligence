@@ -135,10 +135,6 @@ class QAEngine:
 
         "orthogonal challenge",
 
-        "not addressed by",
-        "not supported by",
-        "not handled by",
-        "not covered by",
 
         "does not address",
         "does not support",
@@ -218,6 +214,10 @@ class QAEngine:
         "problem of accurately",
 
         "proper mechanism",
+
+        "interrupt triggering problem",
+        "interrupt handling problem",
+        "triggering interrupts problem",
     )
 
     # =========================================================
@@ -1194,7 +1194,7 @@ class QAEngine:
                 lower
             )
         ):
-            score -= 1.75
+            score -= 0.50
 
         if self._is_comparison_sentence(
             text
@@ -1432,7 +1432,7 @@ class QAEngine:
         if self._is_limitation_sentence(
             text
         ):
-            score -= 1.75
+            score -= 0.50
 
         return score
 
@@ -1457,10 +1457,9 @@ class QAEngine:
             reverse=True
         )
 
-        # -----------------------------------------------------
-        # Pass 1: explicit definition
-        # -----------------------------------------------------
-
+        # Pass 1 — explicit paper-level purpose/objective
+        # Pass 2 — strong author statements.
+        # Pass 3 — "we aim/seek to ..."
         for score, candidate in ranked:
 
             if score <= 0:
@@ -1596,6 +1595,20 @@ class QAEngine:
         ):
             score += 0.35
 
+
+        # Paper-introduction problem statements are not the mechanism itself.
+        if (
+            re.search(
+                r"\bwe\s+(present|introduce|propose)\b",
+                lower
+            )
+            and
+            re.search(
+                r"\b(to\s+tackle|to\s+address|to\s+solve)\b",
+                lower
+            )
+        ):
+            score -= 1.00
         # Do not select comparison sentences.
         if self._is_comparison_sentence(
             text
@@ -1951,7 +1964,7 @@ class QAEngine:
         )
 
         # -----------------------------------------------------
-        # Pass 1 — explicit paper-level purpose/objective
+        # Pass 1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â explicit paper-level purpose/objective
         # -----------------------------------------------------
         explicit_patterns = (
             r"\bthe\s+(main\s+|primary\s+)?purpose\s+of\s+this\s+"
@@ -1983,7 +1996,7 @@ class QAEngine:
                         return sentence.strip()
 
         # -----------------------------------------------------
-        # Pass 2 — strong author statements.
+        # Pass 2 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â strong author statements.
         #
         # "we present X to tackle Y" is an objective.
         # "we propose the following heuristics" is NOT.
@@ -2034,7 +2047,7 @@ class QAEngine:
                     return sentence.strip()
 
         # -----------------------------------------------------
-        # Pass 3 — "we aim/seek to ..."
+        # Pass 3 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â "we aim/seek to ..."
         # -----------------------------------------------------
         for candidate in ranked:
             text = candidate.get("text", "").strip()
@@ -2083,8 +2096,9 @@ class QAEngine:
             candidate
         )
 
+        # Result vocabulary alone is weak evidence.
         score += (
-            0.40 *
+            0.20 *
             self._cue_score(
                 text,
                 self.RESULT_CUES
@@ -2092,41 +2106,164 @@ class QAEngine:
         )
 
         if candidate["entities"]:
-
             if self._contains_entity(
                 text,
                 candidate["entities"]
             ):
-                score += 0.60
+                score += 0.50
 
-        # Numeric evidence.
+        # Strong result/finding structures.
         if re.search(
+            r"\b(results?|findings?)\s+"
+            r"(show|showed|indicate|indicated|"
+            r"demonstrate|demonstrated)\b",
+            lower
+        ):
+            score += 2.50
+
+        if re.search(
+            r"\b("
+            r"found|discovered|achieved|"
+            r"outperforms?|outperformed|"
+            r"demonstrated|"
+            r"detected\s+\d+|"
+            r"identified\s+\d+"
+            r")\b",
+            lower
+        ):
+            score += 1.80
+
+        # Explicit measurable findings.
+        if re.search(
+            r"\b("
+            r"improved|increased|decreased|reduced|"
+            r"higher|lower|better|"
+            r"accuracy|precision|recall|"
+            r"coverage|pass\s+rate|mutation\s+score|"
+            r"fault\s+detection"
+            r")\b",
+            lower
+        ) and re.search(
             r"\b\d+(?:\.\d+)?%?\b",
             lower
         ):
-            score += 0.25
+            score += 1.50
 
+        # Numeric evidence is useful only with result-oriented language.
         if re.search(
-            r"\b(found|discovered|achieved|"
-            r"outperforms|results show|"
-            r"evaluated|detected|identified|"
-            r"demonstrated)\b",
+            r"\b\d+(?:\.\d+)?%?\b",
+            lower
+        ) and re.search(
+            r"\b("
+            r"results?|findings?|achieved|"
+            r"improved|increased|decreased|reduced|"
+            r"accuracy|precision|recall|coverage|"
+            r"detected|identified|outperformed"
+            r")\b",
             lower
         ):
-            score += 0.90
+            score += 0.50
 
+        # Evaluation alone is not sufficient evidence of a result.
+        if re.search(
+            r"^\s*(the\s+)?"
+            r"(evaluation|experiments?|experimental\s+results?)"
+            r"\s+(were|was|show|showed|"
+            r"demonstrate|demonstrated)?\s*$",
+            lower
+        ):
+            score -= 2.50
+
+        # Pure methodological statements are not results.
+        if re.search(
+            r"\b("
+            r"we\s+(implemented|evaluated|tested|"
+            r"measured|collected|used|designed|developed)"
+            r"|the\s+system\s+(uses|contains|consists)"
+            r")\b",
+            lower
+        ):
+            score -= 1.50
+
+        # Comparison-only sentences should not dominate.
         if self._is_comparison_sentence(
             text
         ):
-            score -= 1.20
+            score -= 2.50
+
+        # Limitations are not results.
+        if self._is_limitation_sentence(
+            text
+        ):
+            score -= 2.00
 
         return score
+
 
     def _extract_result(
         self,
         question: str,
         candidates: List[Dict]
     ) -> str:
+
+        def is_strong_result(text: str) -> bool:
+            lower = text.lower()
+
+            if self._is_comparison_sentence(text):
+                return False
+
+            if self._is_limitation_sentence(text):
+                return False
+
+            # Strong explicit result/finding structures.
+            if re.search(
+                r"\b(results?|findings?)\s+"
+                r"(show|showed|indicate|indicated|"
+                r"demonstrate|demonstrated)\b",
+                lower
+            ):
+                return True
+
+            if re.search(
+                r"\b("
+                r"found|discovered|achieved|"
+                r"outperforms?|outperformed|"
+                r"demonstrated"
+                r")\b",
+                lower
+            ):
+                return True
+
+            # Detection/identification counts are explicit findings.
+            if re.search(
+                r"\b("
+                r"detected|identified"
+                r")\s+\d+(?:\.\d+)?\b",
+                lower
+            ):
+                return True
+
+            # Quantified improvement/performance evidence.
+            if (
+                re.search(
+                    r"\b("
+                    r"improved|increased|decreased|reduced|"
+                    r"higher|lower|better|"
+                    r"accuracy|precision|recall|coverage|"
+                    r"pass\s+rate|mutation\s+score|"
+                    r"fault\s+detection"
+                    r")\b",
+                    lower
+                )
+                and
+                re.search(
+                    r"\b\d+(?:\.\d+)?%?\b",
+                    lower
+                )
+            ):
+                return True
+
+            return False
 
         ranked = sorted(
             (
@@ -2150,7 +2287,7 @@ class QAEngine:
             if score <= 0:
                 continue
 
-            if self._is_comparison_sentence(
+            if not is_strong_result(
                 candidate["text"]
             ):
                 continue
@@ -2167,6 +2304,7 @@ class QAEngine:
             )
 
         return self._not_found()
+
 
     # =========================================================
     # LIMITATIONS
@@ -2186,38 +2324,236 @@ class QAEngine:
             candidate
         )
 
+        # Limitation vocabulary alone is weak evidence.
         score += (
-            0.45 *
+            0.20 *
             self._cue_score(
                 text,
                 self.LIMITATION_CUES
             )
         )
 
+        # Strong explicit limitation structures.
+        strong_limitation = bool(
+            re.search(
+                r"\b("
+                r"limitation|limitations|"
+                r"major limitation|key limitation|"
+                r"main limitation|"
+                r"shortcoming|shortcomings|"
+                r"drawback|drawbacks|"
+                r"constraint|constraints"
+                r")\b",
+                lower
+            )
+        )
+
+        explicit_gap = bool(
+            re.search(
+                r"\b("
+                r"(?:is|are|was|were)\s+not\s+"
+                r"(?:addressed|covered|supported)|"
+                r"not addressed|"
+                r"not covered|"
+                r"not supported|"
+                r"does not support|"
+                r"do not support|"
+                r"cannot handle|"
+                r"cannot detect|"
+                r"cannot identify|"
+                r"unable to|"
+                r"unable to handle|"
+                r"unable to detect|"
+                r"unable to identify|"
+                r"remains challenging|"
+                r"remains difficult|"
+                r"remains unresolved"
+                r")\b",
+                lower
+            )
+        )
+
+        future_gap = bool(
+            re.search(
+                r"\b("
+                r"future work|"
+                r"future research|"
+                r"future studies|"
+                r"requires further investigation|"
+                r"requires further research|"
+                r"should be investigated|"
+                r"should be addressed"
+                r")\b",
+                lower
+            )
+            and
+            re.search(
+                r"\b("
+                r"limitation|"
+                r"challenge|"
+                r"gap|"
+                r"lack|"
+                r"remain|"
+                r"not addressed|"
+                r"not covered|"
+                r"improve|"
+                r"extend|"
+                r"investigate|"
+                r"support"
+                r")\b",
+                lower
+            )
+        )
+
+        # Strong structures receive substantial evidence weight.
+        if strong_limitation:
+            score += 2.50
+
+        if explicit_gap:
+            score += 2.50
+
+        if future_gap:
+            score += 2.00
+
+        # A bare negative statement is not enough.
         if re.search(
             r"\b(cannot|could not|unable|"
-            r"does not|not support|future work|"
-            r"not addressed|not covered|"
-            r"limitation|shortcoming|drawback)\b",
+            r"does not|do not|not support|"
+            r"not addressed|not covered)\b",
             lower
+        ):
+            if not (
+                strong_limitation
+                or explicit_gap
+                or future_gap
+            ):
+                score -= 1.50
+
+        # Pure result/evaluation sentences are not limitations.
+        if re.search(
+            r"\b(results?|evaluation|experiments?|"
+            r"outperforms?|coverage|"
+            r"detected|identified|achieved)\b",
+            lower
+        ):
+            score -= 1.50
+
+        # Pure methodological statements are not limitations.
+        if re.search(
+            r"\b(uses|using|via|through|"
+            r"handles|triggers|models|"
+            r"analyzes|selects|adapts|"
+            r"determines|tracks|checks)\b",
+            lower
+        ) and not (
+            strong_limitation
+            or explicit_gap
+            or future_gap
+        ):
+            score -= 1.25
+
+        # Comparison sentences should not dominate limitation extraction.
+        if self._is_comparison_sentence(
+            text
+        ):
+            score -= 2.00
+
+        # Candidate-level limitation classifier is useful supporting evidence.
+        if self._is_limitation_sentence(
+            text
         ):
             score += 1.00
 
         if candidate["entities"]:
-
             if self._contains_entity(
                 text,
                 candidate["entities"]
             ):
-                score += 0.40
+                score += 0.30
 
         return score
+
 
     def _extract_limitation(
         self,
         question: str,
         candidates: List[Dict]
     ) -> str:
+
+        def is_strong_limitation(text: str) -> bool:
+            lower = text.lower()
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                return False
+
+            # Explicit limitation/gap language.
+            if re.search(
+                r"\b("
+                r"limitation|limitations|"
+                r"major limitation|key limitation|"
+                r"main limitation|"
+                r"shortcoming|shortcomings|"
+                r"drawback|drawbacks|"
+                r"constraint|constraints"
+                r")\b",
+                lower
+            ):
+                return True
+
+            if re.search(
+                r"\b("
+                r"(?:is|are|was|were)\s+not\s+"
+                r"(?:addressed|covered|supported)|"
+                r"not addressed|"
+                r"not covered|"
+                r"not supported|"
+                r"does not support|"
+                r"do not support|"
+                r"cannot handle|"
+                r"cannot detect|"
+                r"cannot identify|"
+                r"unable to|"
+                r"remains challenging|"
+                r"remains difficult|"
+                r"remains unresolved"
+                r")\b",
+                lower
+            ):
+                return True
+
+            # Future-work language counts only when tied to an actual gap.
+            if re.search(
+                r"\b("
+                r"future work|"
+                r"future research|"
+                r"future studies|"
+                r"requires further investigation|"
+                r"requires further research|"
+                r"should be investigated|"
+                r"should be addressed"
+                r")\b",
+                lower
+            ) and re.search(
+                r"\b("
+                r"limitation|"
+                r"challenge|"
+                r"gap|"
+                r"lack|"
+                r"remain|"
+                r"not addressed|"
+                r"not covered|"
+                r"improve|"
+                r"extend|"
+                r"investigate|"
+                r"support"
+                r")\b",
+                lower
+            ):
+                return True
+
+            return False
 
         ranked = sorted(
             (
@@ -2238,7 +2574,25 @@ class QAEngine:
 
         for score, candidate in ranked:
 
+            text = candidate["text"].strip()
+
             if score <= 0:
+                continue
+
+            if not is_strong_limitation(
+                text
+            ):
+                continue
+
+            if re.search(
+                r"\b(results?|evaluation|experiments?)\b",
+                text.lower()
+            ) and not re.search(
+                r"\b(limitation|shortcoming|drawback|"
+                r"not addressed|not covered|"
+                r"cannot|unable|remains)\b",
+                text.lower()
+            ):
                 continue
 
             selected.append(candidate)
@@ -2254,6 +2608,7 @@ class QAEngine:
 
         return self._not_found()
 
+
     # =========================================================
     # GENERAL QUESTION
     # =========================================================
@@ -2264,23 +2619,128 @@ class QAEngine:
         candidate: Dict
     ) -> float:
 
+        text = candidate["text"]
+        lower = text.lower()
+
+        # General QA must not answer a question that clearly
+        # belongs to a specialized intent such as problem,
+        # mechanism, definition, objective, result, or limitation.
+        intent = self._detect_intent(
+            question
+        )
+
+        if intent != "general":
+            return -10.0
+
+        if self._is_comparison_sentence(
+            text
+        ):
+            return -10.0
+
         score = self._base_score(
             question,
             candidate
         )
 
-        if self._is_comparison_sentence(
-            candidate["text"]
+        # General paper-level questions such as:
+        # "What does the paper discuss?"
+        # "What is the paper about?"
+        # "What does this study focus on?"
+        # should rely on document-content evidence rather
+        # than requiring an exact match for words like
+        # "discuss" or "about".
+        broad_general_question = bool(
+            re.search(
+                r"\b("
+                r"what\s+does\s+(?:the\s+)?paper\s+"
+                r"(?:discuss|cover|focus\s+on|address)|"
+                r"what\s+is\s+(?:the\s+)?paper\s+about|"
+                r"what\s+does\s+(?:the\s+)?study\s+"
+                r"(?:discuss|cover|focus\s+on|address)|"
+                r"what\s+is\s+(?:the\s+)?study\s+about"
+                r")\b",
+                question.lower()
+            )
+        )
+
+        # Broad general questions need recognizable
+        # paper-content evidence.
+        if broad_general_question:
+            if not re.search(
+                r"\b("
+                r"paper|study|research|approach|method|"
+                r"system|framework|algorithm|architecture|"
+                r"experiment|evaluation|results?|findings?|"
+                r"problem|challenge|limitation|objective|"
+                r"purpose|aim|propose|present|introduce|"
+                r"develop|developed|design|designed|"
+                r"detect|detected|identify|identified|"
+                r"analy[sz]|model|models|"
+                r"trigger|interrupt|firmware|hardware|"
+                r"fuzzing|vulnerability|vulnerabilities"
+                r")\b",
+                lower
+            ):
+                return -5.0
+
+            score += 0.75
+
+        # Other general questions still need meaningful
+        # lexical overlap or identifiable paper evidence.
+        else:
+            focus_tokens = candidate.get(
+                "focus_tokens",
+                set()
+            )
+
+            sentence_tokens = self._important_tokens(
+                text
+            )
+
+            overlap = (
+                focus_tokens &
+                sentence_tokens
+            )
+
+            if focus_tokens and not overlap:
+                return -5.0
+
+            if focus_tokens:
+                score += (
+                    1.50 *
+                    (
+                        len(overlap) /
+                        len(focus_tokens)
+                    )
+                )
+
+        # Reject clearly unrelated content.
+        if re.search(
+            r"\b("
+            r"weather|temperature|sunny|rain|"
+            r"sports?|football|basketball|"
+            r"movie|restaurant|holiday"
+            r")\b",
+            lower
         ):
-            score -= 0.50
+            return -5.0
 
         return score
+
 
     def _extract_general(
         self,
         question: str,
         candidates: List[Dict]
     ) -> str:
+
+        # Do not let General QA bypass a specialized intent.
+        intent = self._detect_intent(
+            question
+        )
+
+        if intent != "general":
+            return self._not_found()
 
         ranked = sorted(
             (
@@ -2297,13 +2757,33 @@ class QAEngine:
             reverse=True
         )
 
-        if not ranked:
-            return self._not_found()
+        for score, candidate in ranked:
 
-        if ranked[0][0] <= 0:
-            return self._not_found()
+            if score <= 0:
+                continue
 
-        return ranked[0][1]["text"]
+            text = candidate["text"]
+
+            if self._is_comparison_sentence(
+                text
+            ):
+                continue
+
+            lower = text.lower()
+
+            if re.search(
+                r"\b("
+                r"weather|temperature|sunny|rain|"
+                r"sports?|football|basketball|"
+                r"movie|restaurant|holiday"
+                r")\b",
+                lower
+            ):
+                continue
+
+            return text
+
+        return self._not_found()
 
     # =========================================================
     # ANSWER VALIDATION
