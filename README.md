@@ -25,6 +25,12 @@ An AI-powered document intelligence system for processing PDF and DOCX documents
 
 ---
 
+## 🚀 Live Demo
+
+👉 [Open the Live Application](https://mdsakib-document-intelligence.streamlit.app)
+
+---
+
 ## 🏗️ System Architecture
 
     Document Upload
